@@ -217,16 +217,16 @@ def main():
         - 最常見的違規類型是什麼？
         """)
 
-    # 初始化 session state
-    if 'query_input' not in st.session_state:
-        st.session_state.query_input = ""
+    # 初始化 session state（使用不同的變數名）
+    if 'current_query' not in st.session_state:
+        st.session_state.current_query = ""
 
     # 查詢輸入
     query = st.text_area(
         "請輸入查詢內容：",
+        value=st.session_state.current_query,
         placeholder="例如：2024年有哪些銀行因為洗錢防制被裁罰？",
-        height=100,
-        key="query_input"
+        height=100
     )
 
     # 快速查詢按鈕
@@ -246,7 +246,7 @@ def main():
         col_idx = idx % 2
         with cols[col_idx]:
             if st.button(f"📌 {quick_query}", key=f"quick_{idx}", use_container_width=True):
-                st.session_state.query_input = quick_query
+                st.session_state.current_query = quick_query
                 st.rerun()
 
     st.markdown("")  # 空行分隔
@@ -259,7 +259,7 @@ def main():
         clear_button = st.button("🗑️ 清除", use_container_width=True)
 
     if clear_button:
-        st.session_state.query_input = ""
+        st.session_state.current_query = ""
         st.rerun()
 
     # 執行查詢
