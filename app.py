@@ -106,13 +106,13 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
         response = client.models.generate_content(
             model='gemini-2.0-flash-exp',
             contents=full_query,
-            config=types.GenerateContentConfig(
-                temperature=0.1,
-                max_output_tokens=2048,
-                tools=[
+            config={
+                'temperature': 0.1,
+                'max_output_tokens': 2048,
+                'tools': [
                     {'file_search': {'file_search_store_names': [store_id]}}
                 ]
-            )
+            }
         )
 
         return {
