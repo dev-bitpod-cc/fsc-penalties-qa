@@ -35,25 +35,10 @@ def init_gemini():
 
     store_id = os.getenv('GEMINI_STORE_ID', 'fileSearchStores/fscpenalties-ma1326u8ck77')
 
-    # 建立文件 ID 到檔名的映射表
-    file_id_to_name = {}
-    try:
-        # 列出 Store 中的所有文件
-        files = client.file_search_stores.list_files(file_search_store_name=store_id)
-
-        for file in files:
-            # file.name 是文件 ID (如 files/abc123)
-            # file.display_name 是實際檔名 (如 fsc_pen_20250925_0001_保.md)
-            if hasattr(file, 'name') and hasattr(file, 'display_name'):
-                file_id = file.name.split('/')[-1]  # 提取 ID
-                file_id_to_name[file_id] = file.display_name
-    except Exception as e:
-        st.warning(f"⚠️ 無法載入文件映射表: {str(e)}")
-
-    return client, store_id, file_id_to_name
+    return client, store_id
 
 # 查詢函數
-def query_penalties(client: genai.Client, query: str, store_id: str, file_id_to_name: dict, filters: dict = None) -> dict:
+def query_penalties(client: genai.Client, query: str, store_id: str, filters: dict = None) -> dict:
     """
     使用 Gemini File Search Store 查詢裁罰案件
 
@@ -172,33 +157,19 @@ def query_penalties(client: genai.Client, query: str, store_id: str, file_id_to_
                                     if hasattr(chunk, 'retrieved_context'):
                                         context = chunk.retrieved_context
 
-                                        # 提取文件 ID
-                                        file_id = None
-                                        if hasattr(context, 'title') and context.title:
-                                            file_id = context.title
-                                        elif hasattr(context, 'uri') and context.uri:
-                                            # 從 URI 提取 ID
-                                            uri_parts = context.uri.split('/')
-                                            if len(uri_parts) > 0:
-                                                file_id = uri_parts[-1]
-
-                                        # 使用映射表轉換為實際檔名
-                                        filename = file_id_to_name.get(file_id, file_id) if file_id else "未知文件"
-
-                                        # 如果沒有檔名或已經處理過，跳過
-                                        if not filename or filename in seen_files:
-                                            continue
-
-                                        # 提取內容片段
+                                        # 提取內容片段（不需要檔名）
                                         snippet = ""
                                         if hasattr(context, 'text') and context.text:
                                             snippet = context.text
 
-                                        sources.append({
-                                            'filename': filename,
-                                            'snippet': snippet
-                                        })
-                                        seen_files[filename] = True
+                                        # 使用 snippet 的部分內容作為唯一標識避免重複
+                                        snippet_id = snippet[:100] if snippet else str(len(sources))
+
+                                        if snippet_id not in seen_files:
+                                            sources.append({
+                                                'snippet': snippet
+                                            })
+                                            seen_files[snippet_id] = True
 
                 # 如果沒有 grounding_supports，回退到 grounding_chunks
                 if not sources and hasattr(metadata, 'grounding_chunks') and metadata.grounding_chunks:
@@ -252,7 +223,7 @@ def main():
     st.info("💡 本系統為展示用，如遇畫面無反應，請重新整理頁面")
 
     # 初始化 Gemini
-    client, store_id, file_id_to_name = init_gemini()
+    client, store_id = init_gemini()
 
     # 側邊欄：篩選條件
     with st.sidebar:
@@ -400,7 +371,7 @@ def main():
                 filters['min_penalty'] = min_penalty
 
             # 執行查詢
-            result = query_penalties(client, query, store_id, file_id_to_name, filters)
+            result = query_penalties(client, query, store_id, filters)
 
             # 顯示結果
             if result['success']:
@@ -414,14 +385,15 @@ def main():
                 if result.get('sources') and len(result['sources']) > 0:
                     st.markdown("---")
                     st.subheader(f"📚 參考文件 ({len(result['sources'])} 筆)")
+                    st.caption("點擊展開可查看引用的原文內容")
 
                     for i, source in enumerate(result['sources'], 1):
-                        with st.expander(f"📄 來源 {i}: {source['filename']}", expanded=False):
+                        with st.expander(f"📄 來源 {i}", expanded=False):
                             if source['snippet']:
-                                st.markdown("**相關內容：**")
+                                st.markdown("**引用內容：**")
                                 st.text(source['snippet'])
                             else:
-                                st.caption("（無摘錄內容）")
+                                st.caption("（無可用內容）")
             else:
                 st.error(f"❌ 查詢失敗：{result['error']}")
 
