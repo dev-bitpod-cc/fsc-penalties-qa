@@ -38,7 +38,7 @@ def init_gemini():
     return client, store_id
 
 # 查詢函數
-def query_penalties(client: genai.Client, query: str, store_id: str, filters: dict = None) -> dict:
+def query_penalties(client: genai.Client, query: str, store_id: str, model: str = 'gemini-2.5-flash', filters: dict = None) -> dict:
     """
     使用 Gemini File Search Store 查詢裁罰案件
 
@@ -120,7 +120,7 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
 
         # 使用 File Search Store 進行查詢（使用正確的型別物件）
         response = client.models.generate_content(
-            model='gemini-2.5-flash',  # File Search 只支援 2.5 版本
+            model=model,  # 使用用戶選擇的模型
             contents=full_query,
             config=types.GenerateContentConfig(
                 tools=[
@@ -157,7 +157,14 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
                                     if hasattr(chunk, 'retrieved_context'):
                                         context = chunk.retrieved_context
 
-                                        # 提取內容片段（不需要檔名）
+                                        # 提取文件 ID/名稱
+                                        filename = "未知文件"
+                                        if hasattr(context, 'title') and context.title:
+                                            filename = context.title
+                                        elif hasattr(context, 'uri') and context.uri:
+                                            filename = context.uri.split('/')[-1]
+
+                                        # 提取內容片段
                                         snippet = ""
                                         if hasattr(context, 'text') and context.text:
                                             snippet = context.text
@@ -167,6 +174,7 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
 
                                         if snippet_id not in seen_files:
                                             sources.append({
+                                                'filename': filename,
                                                 'snippet': snippet
                                             })
                                             seen_files[snippet_id] = True
@@ -177,29 +185,27 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
                         if hasattr(chunk, 'retrieved_context'):
                             context = chunk.retrieved_context
 
-                            # 提取文件 ID
-                            file_id = None
+                            # 提取文件 ID/名稱
+                            filename = "未知文件"
                             if hasattr(context, 'title') and context.title:
-                                file_id = context.title
+                                filename = context.title
                             elif hasattr(context, 'uri') and context.uri:
-                                file_id = context.uri.split('/')[-1]
-
-                            # 使用映射表轉換為實際檔名
-                            filename = file_id_to_name.get(file_id, file_id) if file_id else "未知文件"
-
-                            if not filename or filename in seen_files:
-                                continue
+                                filename = context.uri.split('/')[-1]
 
                             # 提取內容片段
                             snippet = ""
                             if hasattr(context, 'text') and context.text:
                                 snippet = context.text
 
-                            sources.append({
-                                'filename': filename,
-                                'snippet': snippet
-                            })
-                            seen_files[filename] = True
+                            # 使用 snippet 的部分內容作為唯一標識避免重複
+                            snippet_id = snippet[:100] if snippet else str(len(sources))
+
+                            if snippet_id not in seen_files:
+                                sources.append({
+                                    'filename': filename,
+                                    'snippet': snippet
+                                })
+                                seen_files[snippet_id] = True
 
         return {
             'success': True,
@@ -227,6 +233,16 @@ def main():
 
     # 側邊欄：篩選條件
     with st.sidebar:
+        # 模型選擇
+        st.header("🤖 AI 模型")
+        model = st.selectbox(
+            "選擇模型",
+            options=["gemini-2.5-flash", "gemini-2.5-pro"],
+            index=0,
+            help="Flash 速度快且成本低；Pro 更準確但較慢"
+        )
+
+        st.divider()
         st.header("🔍 篩選條件")
 
         # 日期範圍
@@ -371,7 +387,7 @@ def main():
                 filters['min_penalty'] = min_penalty
 
             # 執行查詢
-            result = query_penalties(client, query, store_id, filters)
+            result = query_penalties(client, query, store_id, model, filters)
 
             # 顯示結果
             if result['success']:
@@ -388,8 +404,8 @@ def main():
                     st.caption("點擊展開可查看引用的原文內容")
 
                     for i, source in enumerate(result['sources'], 1):
-                        with st.expander(f"📄 來源 {i}", expanded=False):
-                            if source['snippet']:
+                        with st.expander(f"📄 來源 {i}: {source.get('filename', '未知文件')}", expanded=False):
+                            if source.get('snippet'):
                                 st.markdown("**引用內容：**")
                                 st.text(source['snippet'])
                             else:
@@ -402,7 +418,7 @@ def main():
 
     # 頁尾
     st.divider()
-    st.caption("資料來源：金融監督管理委員會 | 技術支援：Google Gemini File Search")
+    st.caption("資料來源：金融監督管理委員會")
     st.caption("⚠️ 本系統僅供參考，實際裁罰資訊請以金管會官網公告為準")
 
 if __name__ == "__main__":
