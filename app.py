@@ -404,7 +404,7 @@ def main():
                     st.caption("點擊展開可查看引用的原文內容")
 
                     for i, source in enumerate(result['sources'], 1):
-                        with st.expander(f"📄 來源 {i}: {source.get('filename', '未知文件')}", expanded=False):
+                        with st.expander(f"📄 來源 {i}", expanded=False):
                             if source.get('snippet'):
                                 st.markdown("**引用內容：**")
                                 st.text(source['snippet'])
