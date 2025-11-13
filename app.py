@@ -216,12 +216,40 @@ def main():
         - 最常見的違規類型是什麼？
         """)
 
+    # 初始化 session state
+    if 'query_text' not in st.session_state:
+        st.session_state.query_text = ""
+
     # 查詢輸入
     query = st.text_area(
         "請輸入查詢內容：",
+        value=st.session_state.query_text,
         placeholder="例如：2024年有哪些銀行因為洗錢防制被裁罰？",
-        height=100
+        height=100,
+        key="query_input"
     )
+
+    # 快速查詢按鈕
+    st.markdown("#### 🚀 快速查詢")
+
+    quick_queries = [
+        "違反金控法利害關係人規定會受到什麼處罰？",
+        "請問在證券因為專業投資人資格審核的裁罰有哪些？",
+        "辦理共同行銷被裁罰的案例有哪些？",
+        "金管會對創投公司的裁罰有哪些？",
+        "證券商遭主管機關裁罰「警告」處分，有哪些業務會受限制？",
+        "內線交易有罪判決所認定重大訊息成立的時點"
+    ]
+
+    cols = st.columns(2)
+    for idx, quick_query in enumerate(quick_queries):
+        col_idx = idx % 2
+        with cols[col_idx]:
+            if st.button(f"📌 {quick_query[:25]}...", key=f"quick_{idx}", use_container_width=True):
+                st.session_state.query_text = quick_query
+                st.rerun()
+
+    st.markdown("")  # 空行分隔
 
     # 查詢按鈕
     col1, col2, col3 = st.columns([1, 1, 4])
@@ -231,6 +259,7 @@ def main():
         clear_button = st.button("🗑️ 清除", use_container_width=True)
 
     if clear_button:
+        st.session_state.query_text = ""
         st.rerun()
 
     # 執行查詢
