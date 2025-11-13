@@ -35,10 +35,25 @@ def init_gemini():
 
     store_id = os.getenv('GEMINI_STORE_ID', 'fileSearchStores/fscpenalties-ma1326u8ck77')
 
-    return client, store_id
+    # 建立文件 ID 到檔名的映射表
+    file_id_to_name = {}
+    try:
+        # 列出 Store 中的所有文件
+        files = client.file_search_stores.list_files(file_search_store_name=store_id)
+
+        for file in files:
+            # file.name 是文件 ID (如 files/abc123)
+            # file.display_name 是實際檔名 (如 fsc_pen_20250925_0001_保.md)
+            if hasattr(file, 'name') and hasattr(file, 'display_name'):
+                file_id = file.name.split('/')[-1]  # 提取 ID
+                file_id_to_name[file_id] = file.display_name
+    except Exception as e:
+        st.warning(f"⚠️ 無法載入文件映射表: {str(e)}")
+
+    return client, store_id, file_id_to_name
 
 # 查詢函數
-def query_penalties(client: genai.Client, query: str, store_id: str, filters: dict = None) -> dict:
+def query_penalties(client: genai.Client, query: str, store_id: str, file_id_to_name: dict, filters: dict = None) -> dict:
     """
     使用 Gemini File Search Store 查詢裁罰案件
 
@@ -139,24 +154,71 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
 
         # 提取來源文件
         sources = []
+        seen_files = {}  # 用於去重
+
         if hasattr(response, 'candidates') and len(response.candidates) > 0:
             candidate = response.candidates[0]
 
             if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
                 metadata = candidate.grounding_metadata
 
-                # File Search 的引用在 grounding_chunks 中
-                if hasattr(metadata, 'grounding_chunks') and metadata.grounding_chunks:
+                # 優先從 grounding_supports 提取（包含引用資訊）
+                if hasattr(metadata, 'grounding_supports') and metadata.grounding_supports:
+                    for support in metadata.grounding_supports:
+                        if hasattr(support, 'grounding_chunk_indices'):
+                            for chunk_idx in support.grounding_chunk_indices:
+                                if chunk_idx < len(metadata.grounding_chunks):
+                                    chunk = metadata.grounding_chunks[chunk_idx]
+
+                                    if hasattr(chunk, 'retrieved_context'):
+                                        context = chunk.retrieved_context
+
+                                        # 提取文件 ID
+                                        file_id = None
+                                        if hasattr(context, 'title') and context.title:
+                                            file_id = context.title
+                                        elif hasattr(context, 'uri') and context.uri:
+                                            # 從 URI 提取 ID
+                                            uri_parts = context.uri.split('/')
+                                            if len(uri_parts) > 0:
+                                                file_id = uri_parts[-1]
+
+                                        # 使用映射表轉換為實際檔名
+                                        filename = file_id_to_name.get(file_id, file_id) if file_id else "未知文件"
+
+                                        # 如果沒有檔名或已經處理過，跳過
+                                        if not filename or filename in seen_files:
+                                            continue
+
+                                        # 提取內容片段
+                                        snippet = ""
+                                        if hasattr(context, 'text') and context.text:
+                                            snippet = context.text
+
+                                        sources.append({
+                                            'filename': filename,
+                                            'snippet': snippet
+                                        })
+                                        seen_files[filename] = True
+
+                # 如果沒有 grounding_supports，回退到 grounding_chunks
+                if not sources and hasattr(metadata, 'grounding_chunks') and metadata.grounding_chunks:
                     for chunk in metadata.grounding_chunks:
                         if hasattr(chunk, 'retrieved_context'):
                             context = chunk.retrieved_context
 
-                            # 提取文件名稱
-                            filename = "未知文件"
+                            # 提取文件 ID
+                            file_id = None
                             if hasattr(context, 'title') and context.title:
-                                filename = context.title
+                                file_id = context.title
                             elif hasattr(context, 'uri') and context.uri:
-                                filename = context.uri.split('/')[-1]
+                                file_id = context.uri.split('/')[-1]
+
+                            # 使用映射表轉換為實際檔名
+                            filename = file_id_to_name.get(file_id, file_id) if file_id else "未知文件"
+
+                            if not filename or filename in seen_files:
+                                continue
 
                             # 提取內容片段
                             snippet = ""
@@ -167,6 +229,7 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
                                 'filename': filename,
                                 'snippet': snippet
                             })
+                            seen_files[filename] = True
 
         return {
             'success': True,
@@ -190,7 +253,7 @@ def main():
     st.info("💡 本系統為展示用，如遇畫面無反應，請重新整理頁面")
 
     # 初始化 Gemini
-    client, store_id = init_gemini()
+    client, store_id, file_id_to_name = init_gemini()
 
     # 側邊欄：篩選條件
     with st.sidebar:
@@ -338,7 +401,7 @@ def main():
                 filters['min_penalty'] = min_penalty
 
             # 執行查詢
-            result = query_penalties(client, query, store_id, filters)
+            result = query_penalties(client, query, store_id, file_id_to_name, filters)
 
             # 顯示結果
             if result['success']:
