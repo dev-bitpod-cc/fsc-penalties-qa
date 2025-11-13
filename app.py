@@ -245,7 +245,7 @@ def main():
     for idx, quick_query in enumerate(quick_queries):
         col_idx = idx % 2
         with cols[col_idx]:
-            if st.button(f"📌 {quick_query[:25]}...", key=f"quick_{idx}", use_container_width=True):
+            if st.button(f"📌 {quick_query}", key=f"quick_{idx}", use_container_width=True):
                 st.session_state.query_text = quick_query
                 st.rerun()
 
