@@ -1,8 +1,8 @@
 # Streamlit Web Framework
 streamlit>=1.32.0
 
-# Google Gemini AI
-google-generativeai>=0.8.0
+# Google Gemini AI (File Search SDK)
+google-genai>=0.2.0
 
 # Environment Variables
 python-dotenv>=1.0.0

@@ -7,7 +7,8 @@ import os
 import streamlit as st
 from datetime import datetime, date
 from dotenv import load_dotenv
-import google.generativeai as genai
+from google import genai
+from google.genai import types
 
 # 載入環境變數
 load_dotenv()
@@ -29,14 +30,15 @@ def init_gemini():
         st.error("❌ 找不到 GEMINI_API_KEY，請設定環境變數")
         st.stop()
 
-    genai.configure(api_key=api_key)
+    # 建立 GenAI Client
+    client = genai.Client(api_key=api_key)
 
     store_id = os.getenv('GEMINI_STORE_ID', 'fileSearchStores/fscpenalties-ma1326u8ck77')
 
-    return store_id
+    return client, store_id
 
 # 查詢函數
-def query_penalties(query: str, store_id: str, filters: dict = None) -> dict:
+def query_penalties(client: genai.Client, query: str, store_id: str, filters: dict = None) -> dict:
     """
     使用 Gemini File Search Store 查詢裁罰案件
 
@@ -70,18 +72,6 @@ def query_penalties(query: str, store_id: str, filters: dict = None) -> dict:
             if filter_parts:
                 full_query = f"{query}\n\n篩選條件：\n" + "\n".join(f"- {p}" for p in filter_parts)
 
-        # 使用 File Search Store 進行查詢
-        model = genai.GenerativeModel(
-            model_name='gemini-2.0-flash',
-            tools=[
-                genai.protos.Tool(
-                    file_search=genai.protos.FileSearchTool(
-                        store_ids=[store_id]
-                    )
-                )
-            ]
-        )
-
         # 建立系統指令
         system_instruction = """你是金管會裁罰案件查詢助理。
 
@@ -112,14 +102,18 @@ def query_penalties(query: str, store_id: str, filters: dict = None) -> dict:
 **資料來源**：fsc_pen_YYYYMMDD_XXXX_XX.md
 """
 
-        # 發送查詢
-        response = model.generate_content(
-            full_query,
-            generation_config={
-                'temperature': 0.1,  # 較低的溫度以確保準確性
-                'max_output_tokens': 2048,
-            },
-            request_options={'system_instruction': system_instruction}
+        # 使用 File Search Store 進行查詢
+        response = client.models.generate_content(
+            model='gemini-2.0-flash-exp',
+            contents=full_query,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.1,
+                max_output_tokens=2048,
+                tools=[
+                    {'file_search': {'file_search_store_names': [store_id]}}
+                ]
+            )
         )
 
         return {
@@ -143,7 +137,7 @@ def main():
     st.markdown("查詢 2011-2025 年間的金融機構裁罰案件（共 495 筆）")
 
     # 初始化 Gemini
-    store_id = init_gemini()
+    client, store_id = init_gemini()
 
     # 側邊欄：篩選條件
     with st.sidebar:
@@ -257,7 +251,7 @@ def main():
                 filters['min_penalty'] = min_penalty
 
             # 執行查詢
-            result = query_penalties(query, store_id, filters)
+            result = query_penalties(client, query, store_id, filters)
 
             # 顯示結果
             if result['success']:
