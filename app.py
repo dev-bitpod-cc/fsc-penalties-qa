@@ -85,7 +85,7 @@ def query_penalties(client: genai.Client, query: str, store_id: str, file_id_to_
 3. **回答格式要求**：
    - 提供具體的案件資訊（日期、單位、被處罰對象、違規事項、裁罰金額、法律依據）
    - 始終註明**發文日期**和**發文字號**
-   - 引用具體的文件來源（檔案名稱）
+   - **重要：不要在回答中列出「資料來源」或檔名**（系統會自動顯示參考文件）
    - 使用繁體中文，保持專業但易懂的語氣
    - 如果找不到相關資料，請明確告知
 
@@ -109,8 +109,7 @@ def query_penalties(client: genai.Client, query: str, store_id: str, file_id_to_
 - **裁罰金額**：新臺幣 XXX 萬元
 - **法律依據**：[相關法規條文]
 
----
-**資料來源**：fsc_pen_YYYYMMDD_XXXX_XX.md
+（注意：不要在每個案件後面加上「資料來源」或檔名，系統會自動在最下方顯示參考文件）
 """
 
         # 建立完整查詢（篩選條件）
