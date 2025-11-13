@@ -81,8 +81,8 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
 **資料來源**：fsc_pen_YYYYMMDD_XXXX_XX.md
 """
 
-        # 建立完整查詢（包含系統指令和篩選條件）
-        full_query = system_instruction + "\n\n使用者問題：" + query
+        # 建立完整查詢（篩選條件）
+        full_query = query
 
         if filters:
             filter_parts = []
@@ -102,17 +102,22 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
             if filter_parts:
                 full_query += "\n\n篩選條件：\n" + "\n".join(f"- {p}" for p in filter_parts)
 
-        # 使用 File Search Store 進行查詢
+        # 使用 File Search Store 進行查詢（使用正確的型別物件）
         response = client.models.generate_content(
             model='gemini-2.0-flash-exp',
             contents=full_query,
-            config={
-                'temperature': 0.1,
-                'max_output_tokens': 2048,
-                'tools': [
-                    {'file_search': {'file_search_store_names': [store_id]}}
-                ]
-            }
+            config=types.GenerateContentConfig(
+                tools=[
+                    types.Tool(
+                        file_search=types.FileSearch(
+                            file_search_store_names=[store_id]
+                        )
+                    )
+                ],
+                temperature=0.1,
+                max_output_tokens=2048,
+                system_instruction=system_instruction
+            )
         )
 
         return {
