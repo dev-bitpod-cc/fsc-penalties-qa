@@ -51,28 +51,7 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
         查詢結果字典
     """
     try:
-        # 建立查詢 prompt（包含篩選條件）
-        full_query = query
-
-        if filters:
-            filter_parts = []
-
-            if filters.get('start_date') and filters.get('end_date'):
-                filter_parts.append(
-                    f"日期範圍：{filters['start_date']} 到 {filters['end_date']}"
-                )
-
-            if filters.get('source_units'):
-                units_str = "、".join(filters['source_units'])
-                filter_parts.append(f"來源單位：{units_str}")
-
-            if filters.get('min_penalty'):
-                filter_parts.append(f"裁罰金額至少：{filters['min_penalty']:,} 元")
-
-            if filter_parts:
-                full_query = f"{query}\n\n篩選條件：\n" + "\n".join(f"- {p}" for p in filter_parts)
-
-        # 建立系統指令
+        # 建立系統指令（放在查詢前面）
         system_instruction = """你是金管會裁罰案件查詢助理。
 
 請根據 File Search Store 中的裁罰案件資料，回答使用者的問題。
@@ -102,12 +81,32 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
 **資料來源**：fsc_pen_YYYYMMDD_XXXX_XX.md
 """
 
+        # 建立完整查詢（包含系統指令和篩選條件）
+        full_query = system_instruction + "\n\n使用者問題：" + query
+
+        if filters:
+            filter_parts = []
+
+            if filters.get('start_date') and filters.get('end_date'):
+                filter_parts.append(
+                    f"日期範圍：{filters['start_date']} 到 {filters['end_date']}"
+                )
+
+            if filters.get('source_units'):
+                units_str = "、".join(filters['source_units'])
+                filter_parts.append(f"來源單位：{units_str}")
+
+            if filters.get('min_penalty'):
+                filter_parts.append(f"裁罰金額至少：{filters['min_penalty']:,} 元")
+
+            if filter_parts:
+                full_query += "\n\n篩選條件：\n" + "\n".join(f"- {p}" for p in filter_parts)
+
         # 使用 File Search Store 進行查詢
         response = client.models.generate_content(
             model='gemini-2.0-flash-exp',
             contents=full_query,
             config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
                 temperature=0.1,
                 max_output_tokens=2048,
                 tools=[
