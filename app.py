@@ -121,7 +121,7 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
 
         # 使用 File Search Store 進行查詢（使用正確的型別物件）
         response = client.models.generate_content(
-            model='gemini-2.0-flash-001',  # 使用正式版，實驗版不支援 File Search
+            model='gemini-2.5-flash',  # File Search 只支援 2.5 版本
             contents=full_query,
             config=types.GenerateContentConfig(
                 tools=[
