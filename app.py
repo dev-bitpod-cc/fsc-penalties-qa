@@ -137,10 +137,41 @@ def query_penalties(client: genai.Client, query: str, store_id: str, filters: di
             )
         )
 
+        # 提取來源文件
+        sources = []
+        if hasattr(response, 'candidates') and len(response.candidates) > 0:
+            candidate = response.candidates[0]
+
+            if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
+                metadata = candidate.grounding_metadata
+
+                # File Search 的引用在 grounding_chunks 中
+                if hasattr(metadata, 'grounding_chunks') and metadata.grounding_chunks:
+                    for chunk in metadata.grounding_chunks:
+                        if hasattr(chunk, 'retrieved_context'):
+                            context = chunk.retrieved_context
+
+                            # 提取文件名稱
+                            filename = "未知文件"
+                            if hasattr(context, 'title') and context.title:
+                                filename = context.title
+                            elif hasattr(context, 'uri') and context.uri:
+                                filename = context.uri.split('/')[-1]
+
+                            # 提取內容片段
+                            snippet = ""
+                            if hasattr(context, 'text') and context.text:
+                                snippet = context.text
+
+                            sources.append({
+                                'filename': filename,
+                                'snippet': snippet
+                            })
+
         return {
             'success': True,
             'text': response.text,
-            'candidates': response.candidates if hasattr(response, 'candidates') else None
+            'sources': sources
         }
 
     except Exception as e:
@@ -166,22 +197,28 @@ def main():
         st.header("🔍 篩選條件")
 
         # 日期範圍
-        st.subheader("日期範圍")
-        col1, col2 = st.columns(2)
-        with col1:
-            start_date = st.date_input(
-                "開始日期",
-                value=date(2020, 1, 1),
-                min_value=date(2011, 1, 1),
-                max_value=date.today()
-            )
-        with col2:
-            end_date = st.date_input(
-                "結束日期",
-                value=date.today(),
-                min_value=date(2011, 1, 1),
-                max_value=date.today()
-            )
+        st.subheader("日期範圍（可選）")
+        enable_date_filter = st.checkbox("啟用日期篩選", value=False)
+
+        if enable_date_filter:
+            col1, col2 = st.columns(2)
+            with col1:
+                start_date = st.date_input(
+                    "開始日期",
+                    value=date(2020, 1, 1),
+                    min_value=date(2011, 1, 1),
+                    max_value=date.today()
+                )
+            with col2:
+                end_date = st.date_input(
+                    "結束日期",
+                    value=date.today(),
+                    min_value=date(2011, 1, 1),
+                    max_value=date.today()
+                )
+        else:
+            start_date = None
+            end_date = None
 
         # 來源單位
         st.subheader("來源單位")
@@ -311,14 +348,18 @@ def main():
                 st.markdown("---")
                 st.markdown(result['text'])
 
-                # 顯示元資料（如果有）
-                if result.get('candidates'):
-                    with st.expander("🔍 查詢詳細資訊"):
-                        st.json({
-                            'model': 'gemini-2.0-flash',
-                            'store_id': store_id,
-                            'filters': filters if filters else None
-                        })
+                # 顯示參考文件
+                if result.get('sources') and len(result['sources']) > 0:
+                    st.markdown("---")
+                    st.subheader(f"📚 參考文件 ({len(result['sources'])} 筆)")
+
+                    for i, source in enumerate(result['sources'], 1):
+                        with st.expander(f"📄 來源 {i}: {source['filename']}", expanded=False):
+                            if source['snippet']:
+                                st.markdown("**相關內容：**")
+                                st.text(source['snippet'])
+                            else:
+                                st.caption("（無摘錄內容）")
             else:
                 st.error(f"❌ 查詢失敗：{result['error']}")
 
