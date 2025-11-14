@@ -506,7 +506,7 @@ def main():
                 mapping = load_file_mapping()
                 gemini_id_mapping = load_gemini_id_mapping()
 
-                # 收集所有參考文件中的法條連結
+                # 收集所有參考文件中的法條連結（過濾無效法條）
                 all_law_links = {}
                 if result.get('sources') and len(result['sources']) > 0:
                     for source in result['sources']:
@@ -514,8 +514,13 @@ def main():
                         file_id = extract_file_id(filename, gemini_id_mapping)
                         file_info = mapping.get(file_id, {})
                         law_links = file_info.get('law_links', {})
+                        # 過濾掉無效法條（以「與」「同」等開頭的誤匹配）
+                        filtered_law_links = {
+                            law: link for law, link in law_links.items()
+                            if not law.startswith(('與', '同', '及', '或', '和'))
+                        }
                         # 合併法條連結
-                        all_law_links.update(law_links)
+                        all_law_links.update(filtered_law_links)
 
                 # 區塊1：顯示回應（為法條加入連結）
                 st.markdown("---")
@@ -600,13 +605,19 @@ def main():
                                 st.markdown(f"🔗 [查看原始公告]({original_url})")
                                 st.markdown("")  # 空行
 
-                            # 適用法條與連結
+                            # 適用法條與連結（過濾無效法條）
                             applicable_laws = file_info.get('applicable_laws', [])
                             law_links = file_info.get('law_links', {})
 
-                            if applicable_laws:
+                            # 過濾掉無效法條
+                            valid_laws = [
+                                law for law in applicable_laws
+                                if not law.startswith(('與', '同', '及', '或', '和'))
+                            ]
+
+                            if valid_laws:
                                 st.markdown("**📜 適用法條**：")
-                                for law in applicable_laws:
+                                for law in valid_laws:
                                     # 如果有法規資料庫連結，顯示為可點擊連結
                                     if law in law_links:
                                         st.markdown(f"- [{law}]({law_links[law]}) 🔗")
