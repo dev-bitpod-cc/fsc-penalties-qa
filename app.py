@@ -466,6 +466,13 @@ def main():
                     # 載入映射檔
                     mapping = load_file_mapping()
 
+                    # 除錯資訊
+                    with st.expander("🔍 除錯資訊", expanded=False):
+                        st.write(f"映射檔載入狀態: {'✅ 成功' if mapping else '❌ 失敗'}")
+                        st.write(f"映射檔筆數: {len(mapping)}")
+                        if result['sources']:
+                            st.write("第一個來源檔名:", result['sources'][0].get('filename', 'N/A'))
+
                     for i, source in enumerate(result['sources'], 1):
                         # 從映射檔取得資訊
                         filename = source.get('filename', '')
