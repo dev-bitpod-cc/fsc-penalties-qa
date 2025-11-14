@@ -31,10 +31,43 @@ def load_file_mapping():
         st.warning(f"⚠️ 載入映射檔失敗: {e}")
         return {}
 
-def extract_file_id(filename: str) -> str:
-    """從檔名中提取 file_id"""
+@st.cache_data
+def load_gemini_id_mapping():
+    """載入 Gemini ID 反向映射檔（Gemini file_id → file_id）"""
+    from pathlib import Path
+    mapping_file = Path(__file__).parent / 'gemini_id_mapping.json'
+
+    if not mapping_file.exists():
+        return {}
+
+    try:
+        import json
+        with open(mapping_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        st.warning(f"⚠️ 載入 Gemini ID 映射檔失敗: {e}")
+        return {}
+
+def extract_file_id(filename: str, gemini_id_mapping: dict = None) -> str:
+    """從檔名中提取 file_id
+
+    Args:
+        filename: Gemini 返回的檔名（可能是內部 ID 如 "4ax547mbfiot"）
+        gemini_id_mapping: Gemini ID 反向映射 (files/xxx → fsc_pen_xxx)
+
+    Returns:
+        file_id（用於查找 file_mapping.json）
+    """
     import re
 
+    # 如果有 gemini_id_mapping，先嘗試反向查找
+    if gemini_id_mapping:
+        # 嘗試完整 ID（files/xxx）
+        full_id = f"files/{filename.replace('files/', '')}"
+        if full_id in gemini_id_mapping:
+            return gemini_id_mapping[full_id]
+
+    # 回退：從檔名提取（適用於舊資料或直接是檔名的情況）
     # 移除 files/ 前綴和 .md 後綴
     filename = filename.replace('files/', '').replace('.md', '')
 
@@ -432,6 +465,7 @@ def main():
                 # 新增：從參考文件中提取並顯示原始連結
                 if result.get('sources') and len(result['sources']) > 0:
                     mapping = load_file_mapping()
+                    gemini_id_mapping = load_gemini_id_mapping()
 
                     # 收集所有原始連結（去重）
                     original_urls = []
@@ -439,7 +473,7 @@ def main():
 
                     for source in result['sources']:
                         filename = source.get('filename', '')
-                        file_id = extract_file_id(filename)
+                        file_id = extract_file_id(filename, gemini_id_mapping)
                         file_info = mapping.get(file_id, {})
                         url = file_info.get('original_url', '')
 
@@ -465,18 +499,26 @@ def main():
 
                     # 載入映射檔
                     mapping = load_file_mapping()
+                    gemini_id_mapping = load_gemini_id_mapping()
 
                     # 除錯資訊
                     with st.expander("🔍 除錯資訊", expanded=False):
                         st.write(f"映射檔載入狀態: {'✅ 成功' if mapping else '❌ 失敗'}")
                         st.write(f"映射檔筆數: {len(mapping)}")
+                        st.write(f"Gemini ID 映射檔載入狀態: {'✅ 成功' if gemini_id_mapping else '❌ 失敗'}")
+                        st.write(f"Gemini ID 映射檔筆數: {len(gemini_id_mapping)}")
                         if result['sources']:
-                            st.write("第一個來源檔名:", result['sources'][0].get('filename', 'N/A'))
+                            st.write("第一個來源完整結構:")
+                            st.json(result['sources'][0])
+                            # 顯示映射過程
+                            first_filename = result['sources'][0].get('filename', '')
+                            first_file_id = extract_file_id(first_filename, gemini_id_mapping)
+                            st.write(f"檔名映射: {first_filename} → {first_file_id}")
 
                     for i, source in enumerate(result['sources'], 1):
                         # 從映射檔取得資訊
                         filename = source.get('filename', '')
-                        file_id = extract_file_id(filename)
+                        file_id = extract_file_id(filename, gemini_id_mapping)
                         file_info = mapping.get(file_id, {})
 
                         # 顯示名稱：日期_來源_機構
