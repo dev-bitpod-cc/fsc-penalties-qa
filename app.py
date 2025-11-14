@@ -13,6 +13,38 @@ from google.genai import types
 # 載入環境變數
 load_dotenv()
 
+# 載入映射檔
+@st.cache_data
+def load_file_mapping():
+    """載入檔案映射檔"""
+    from pathlib import Path
+    mapping_file = Path(__file__).parent / 'file_mapping.json'
+
+    if not mapping_file.exists():
+        return {}
+
+    try:
+        import json
+        with open(mapping_file, 'r', encoding='utf-8') as f:
+            return json.load(f)
+    except Exception as e:
+        st.warning(f"⚠️ 載入映射檔失敗: {e}")
+        return {}
+
+def extract_file_id(filename: str) -> str:
+    """從檔名中提取 file_id"""
+    import re
+
+    # 移除 files/ 前綴和 .md 後綴
+    filename = filename.replace('files/', '').replace('.md', '')
+
+    # 提取 fsc_pen_YYYYMMDD_NNNN 格式
+    match = re.match(r'(fsc_pen_\d{8}_\d{4})', filename)
+    if match:
+        return match.group(1)
+
+    return filename
+
 # 設定頁面
 st.set_page_config(
     page_title="金管會裁罰案件查詢系統",
@@ -33,7 +65,7 @@ def init_gemini():
     # 建立 GenAI Client
     client = genai.Client(api_key=api_key)
 
-    store_id = os.getenv('GEMINI_STORE_ID', 'fileSearchStores/fscpenalties-ma1326u8ck77')
+    store_id = os.getenv('GEMINI_STORE_ID', 'fileSearchStores/fscpenalties-tu709bvr1qti')
 
     return client, store_id
 
@@ -393,21 +425,73 @@ def main():
             if result['success']:
                 st.success("✅ 查詢完成")
 
-                # 顯示回應
+                # 區塊1：顯示回應（已包含結構化資料，Markdown 已渲染）
                 st.markdown("---")
                 st.markdown(result['text'])
 
-                # 顯示參考文件
+                # 新增：從參考文件中提取並顯示原始連結
+                if result.get('sources') and len(result['sources']) > 0:
+                    mapping = load_file_mapping()
+
+                    # 收集所有原始連結（去重）
+                    original_urls = []
+                    seen_urls = set()
+
+                    for source in result['sources']:
+                        filename = source.get('filename', '')
+                        file_id = extract_file_id(filename)
+                        file_info = mapping.get(file_id, {})
+                        url = file_info.get('original_url', '')
+
+                        if url and url not in seen_urls:
+                            original_urls.append({
+                                'url': url,
+                                'display_name': file_info.get('display_name', file_id)
+                            })
+                            seen_urls.add(url)
+
+                    # 顯示原始連結
+                    if original_urls:
+                        st.markdown("---")
+                        st.markdown("**🔗 相關裁罰案件原始公告**")
+                        for item in original_urls:
+                            st.markdown(f"- [{item['display_name']}]({item['url']})")
+
+                # 區塊2：參考文件
                 if result.get('sources') and len(result['sources']) > 0:
                     st.markdown("---")
                     st.subheader(f"📚 參考文件 ({len(result['sources'])} 筆)")
-                    st.caption("點擊展開可查看引用的原文內容")
+                    st.caption("點擊展開可查看完整原始內容")
+
+                    # 載入映射檔
+                    mapping = load_file_mapping()
 
                     for i, source in enumerate(result['sources'], 1):
-                        with st.expander(f"📄 來源 {i}", expanded=False):
-                            if source.get('snippet'):
-                                st.markdown("**引用內容：**")
-                                st.text(source['snippet'])
+                        # 從映射檔取得資訊
+                        filename = source.get('filename', '')
+                        file_id = extract_file_id(filename)
+                        file_info = mapping.get(file_id, {})
+
+                        # 顯示名稱：日期_來源_機構
+                        display_name = file_info.get('display_name', f"來源 {i}")
+                        original_url = file_info.get('original_url', '')
+                        original_content = file_info.get('original_content', {}).get('text', source.get('snippet', ''))
+
+                        # 使用 expander 顯示
+                        with st.expander(f"📄 {display_name}", expanded=False):
+                            # 原始網頁連結
+                            if original_url:
+                                st.markdown(f"🔗 [查看原始公告]({original_url})")
+                                st.markdown("")  # 空行
+
+                            # 顯示原始內容
+                            if original_content:
+                                st.markdown("**原始內容**：")
+                                # 限制顯示長度避免過長
+                                if len(original_content) > 2000:
+                                    st.text(original_content[:2000] + "\n\n...(內容過長，請點擊上方連結查看完整內容)")
+                                else:
+                                    st.text(original_content)
                             else:
                                 st.caption("（無可用內容）")
             else:
