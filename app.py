@@ -514,6 +514,12 @@ def main():
                             first_filename = result['sources'][0].get('filename', '')
                             first_file_id = extract_file_id(first_filename, gemini_id_mapping)
                             st.write(f"檔名映射: {first_filename} → {first_file_id}")
+                            # 顯示法條資訊
+                            first_file_info = mapping.get(first_file_id, {})
+                            first_laws = first_file_info.get('applicable_laws', [])
+                            first_law_links = first_file_info.get('law_links', {})
+                            st.write(f"適用法條數: {len(first_laws)}")
+                            st.write(f"法條連結數: {len(first_law_links)}")
 
                     for i, source in enumerate(result['sources'], 1):
                         # 從映射檔取得資訊
@@ -531,6 +537,20 @@ def main():
                             # 原始網頁連結
                             if original_url:
                                 st.markdown(f"🔗 [查看原始公告]({original_url})")
+                                st.markdown("")  # 空行
+
+                            # 適用法條與連結
+                            applicable_laws = file_info.get('applicable_laws', [])
+                            law_links = file_info.get('law_links', {})
+
+                            if applicable_laws:
+                                st.markdown("**📜 適用法條**：")
+                                for law in applicable_laws:
+                                    # 如果有法規資料庫連結，顯示為可點擊連結
+                                    if law in law_links:
+                                        st.markdown(f"- [{law}]({law_links[law]}) 🔗")
+                                    else:
+                                        st.markdown(f"- {law}")
                                 st.markdown("")  # 空行
 
                             # 顯示原始內容
