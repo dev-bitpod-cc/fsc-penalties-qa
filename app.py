@@ -78,6 +78,50 @@ def extract_file_id(filename: str, gemini_id_mapping: dict = None) -> str:
 
     return filename
 
+def add_law_links_to_text(text: str, law_links_dict: dict) -> str:
+    """在文字中為法條加入連結
+
+    Args:
+        text: 原始文字
+        law_links_dict: 法條到連結的映射 {法條名稱: URL}
+
+    Returns:
+        加入連結後的文字
+    """
+    import re
+
+    if not law_links_dict:
+        return text
+
+    # 按法條名稱長度排序（長的優先，避免短的先被替換導致長的無法匹配）
+    sorted_laws = sorted(law_links_dict.keys(), key=len, reverse=True)
+
+    result = text
+    replaced = set()  # 記錄已替換的法條，避免重複替換
+
+    for law in sorted_laws:
+        if law in replaced:
+            continue
+
+        link = law_links_dict[law]
+
+        # 使用正則表達式找到法條（確保不在 Markdown 連結中）
+        # 不匹配已經是連結的部分：[xxx] 或 (http...)
+        pattern = r'(?<!\[)(?<!\()' + re.escape(law) + r'(?!\])(?!\))'
+
+        # 替換為 Markdown 連結格式
+        replacement = f'[{law}]({link})'
+
+        # 執行替換
+        new_result = re.sub(pattern, replacement, result)
+
+        # 如果有替換發生，記錄下來
+        if new_result != result:
+            replaced.add(law)
+            result = new_result
+
+    return result
+
 # 設定頁面
 st.set_page_config(
     page_title="金管會裁罰案件查詢系統",
@@ -458,15 +502,30 @@ def main():
             if result['success']:
                 st.success("✅ 查詢完成")
 
-                # 區塊1：顯示回應（已包含結構化資料，Markdown 已渲染）
+                # 載入映射檔（用於法條連結和原始連結）
+                mapping = load_file_mapping()
+                gemini_id_mapping = load_gemini_id_mapping()
+
+                # 收集所有參考文件中的法條連結
+                all_law_links = {}
+                if result.get('sources') and len(result['sources']) > 0:
+                    for source in result['sources']:
+                        filename = source.get('filename', '')
+                        file_id = extract_file_id(filename, gemini_id_mapping)
+                        file_info = mapping.get(file_id, {})
+                        law_links = file_info.get('law_links', {})
+                        # 合併法條連結
+                        all_law_links.update(law_links)
+
+                # 區塊1：顯示回應（為法條加入連結）
                 st.markdown("---")
-                st.markdown(result['text'])
+                response_text = result['text']
+                # 在回應中為法條加入連結
+                response_with_links = add_law_links_to_text(response_text, all_law_links)
+                st.markdown(response_with_links)
 
                 # 新增：從參考文件中提取並顯示原始連結
                 if result.get('sources') and len(result['sources']) > 0:
-                    mapping = load_file_mapping()
-                    gemini_id_mapping = load_gemini_id_mapping()
-
                     # 收集所有原始連結（去重）
                     original_urls = []
                     seen_urls = set()
@@ -497,17 +556,19 @@ def main():
                     st.subheader(f"📚 參考文件 ({len(result['sources'])} 筆)")
                     st.caption("點擊展開可查看完整原始內容")
 
-                    # 載入映射檔
-                    mapping = load_file_mapping()
-                    gemini_id_mapping = load_gemini_id_mapping()
-
                     # 除錯資訊
                     with st.expander("🔍 除錯資訊", expanded=False):
                         st.write(f"映射檔載入狀態: {'✅ 成功' if mapping else '❌ 失敗'}")
                         st.write(f"映射檔筆數: {len(mapping)}")
                         st.write(f"Gemini ID 映射檔載入狀態: {'✅ 成功' if gemini_id_mapping else '❌ 失敗'}")
                         st.write(f"Gemini ID 映射檔筆數: {len(gemini_id_mapping)}")
+                        st.write(f"**收集到的法條連結總數: {len(all_law_links)}**")
+                        if all_law_links:
+                            st.write("法條連結範例（前3個）:")
+                            for law, link in list(all_law_links.items())[:3]:
+                                st.write(f"  - {law}: {link[:50]}...")
                         if result['sources']:
+                            st.write("")
                             st.write("第一個來源完整結構:")
                             st.json(result['sources'][0])
                             # 顯示映射過程
@@ -518,8 +579,8 @@ def main():
                             first_file_info = mapping.get(first_file_id, {})
                             first_laws = first_file_info.get('applicable_laws', [])
                             first_law_links = first_file_info.get('law_links', {})
-                            st.write(f"適用法條數: {len(first_laws)}")
-                            st.write(f"法條連結數: {len(first_law_links)}")
+                            st.write(f"第一個來源適用法條數: {len(first_laws)}")
+                            st.write(f"第一個來源法條連結數: {len(first_law_links)}")
 
                     for i, source in enumerate(result['sources'], 1):
                         # 從映射檔取得資訊
