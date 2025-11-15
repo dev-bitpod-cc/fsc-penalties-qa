@@ -230,7 +230,7 @@ def remove_social_media_noise(text: str) -> str:
 
 def display_grounding_sources_v2(sources: list, file_mapping: dict, gemini_id_mapping: dict, excluded_file_ids: set = None):
     """
-    顯示也可以另外參考（區塊3 - 新版）
+    顯示另外也可以參考（區塊3 - 新版）
 
     只顯示不在查詢結果標題中的額外參考文件
 
@@ -269,8 +269,8 @@ def display_grounding_sources_v2(sources: list, file_mapping: dict, gemini_id_ma
     if not additional_file_ids:
         return
 
-    # 4. 顯示也可以另外參考
-    st.subheader(f"📚 也可以另外參考 ({len(additional_file_ids)} 筆)")
+    # 4. 顯示另外也可以參考
+    st.subheader(f"📚 另外也可以參考 ({len(additional_file_ids)} 筆)")
 
     for file_id in additional_file_ids:
         # 查找 file_mapping
@@ -807,7 +807,7 @@ def main():
                 #         for item in original_urls:
                 #             st.markdown(f"- [{item['display_name']}]({item['url']})")
 
-                    # ===== 區塊3：也可以另外參考（新版） =====
+                    # ===== 區塊3：另外也可以參考（新版） =====
                     # 只顯示不在查詢結果標題中的額外參考文件
                     if result.get('sources') and len(result['sources']) > 0:
                         st.markdown("---")
