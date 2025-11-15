@@ -1,6 +1,8 @@
 """
 FSC 裁罰案件查詢系統
 使用 Google Gemini File Search Store 進行 RAG 查詢
+
+Version: 1.0.1 - 修正證券投資信託及顧問法 pcode (G0400121)
 """
 
 import os
