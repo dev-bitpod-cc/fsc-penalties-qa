@@ -379,6 +379,13 @@ def query_penalties(client: genai.Client, query: str, store_id: str, model: str 
    - 按時間順序（最新在前）或相關性排序
    - 每個案件獨立說明，不要混淆
 
+5. **概念性問題處理**（重要）：
+   - 當使用者提出概念性問題（如「遭裁罰後有哪些業務限制」），可以提供總結式回答
+   - **但仍建議列出至少 1-2 個具體案例**作為說明，使用上述格式
+   - 例如：先總結業務限制類型，再列出「### 1. [具體案例]」
+   - 這樣既能回答概念問題，也能讓使用者參考實際案例
+   - 如果選擇只提供總結而不列出案例，系統會在「也可以另外參考」區塊顯示相關案件
+
 回答格式範例：
 
 ## 查詢結果
@@ -811,21 +818,21 @@ def main():
                 # 移到條件外，即使 sources 為空也顯示（用於診斷問題）
                 st.markdown("---")
                 with st.expander("🔍 除錯資訊：Gemini 原始參考列表", expanded=False):
-                        st.caption("以下是 Gemini File Search 返回的所有參考文件（去重後）")
-
                         # 診斷資訊：檢查 sources 是否存在
                         sources = result.get('sources', [])
-                        st.info(f"📊 Gemini 返回的 sources 數量: {len(sources)}")
-                        st.info(f"📝 回答中的標題數量: {num_titles}")
-                        st.info(f"✅ 加入查詢結果的文件數量: {len(seen_file_ids)}")
 
-                        # 顯示所有原始 sources（未去重）
-                        if sources:
-                            with st.expander("🔍 原始 sources 列表（未去重）", expanded=False):
+                        # 整合顯示 sources 數量（未去重）和原始列表
+                        with st.expander(f"📊 Gemini 返回的 sources 數量（未去重）: {len(sources)}", expanded=False):
+                            if sources:
                                 for i, source in enumerate(sources, 1):
                                     filename = source.get('filename', 'N/A')
                                     file_id = extract_file_id(filename, gemini_id_mapping)
                                     st.caption(f"{i}. Gemini ID: `{filename}` → File ID: `{file_id}`")
+                            else:
+                                st.caption("無 sources")
+
+                        st.info(f"📝 回答中的標題數量: {num_titles}")
+                        st.info(f"✅ 加入查詢結果的文件數量: {len(seen_file_ids)}")
 
                         if not sources:
                             st.warning("⚠️ Gemini 未返回任何參考文件（sources 為空）")
