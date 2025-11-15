@@ -785,6 +785,34 @@ def main():
                         gemini_id_mapping=gemini_id_mapping,
                         excluded_file_ids=seen_file_ids  # 排除已在區塊1列出的文件
                     )
+
+                    # ===== 除錯資訊：顯示原始參考內容列表 =====
+                    with st.expander("🔍 除錯資訊：Gemini 原始參考列表", expanded=False):
+                        st.caption("以下是 Gemini File Search 返回的所有參考文件（去重後）")
+
+                        # 提取並去重所有 file_ids
+                        all_file_ids = []
+                        seen_debug = set()
+
+                        for source in result['sources']:
+                            filename = source.get('filename', '')
+                            file_id = extract_file_id(filename, gemini_id_mapping)
+
+                            if file_id and file_id not in seen_debug:
+                                all_file_ids.append(file_id)
+                                seen_debug.add(file_id)
+
+                        st.write(f"**總共 {len(all_file_ids)} 筆參考文件：**")
+
+                        for i, file_id in enumerate(all_file_ids, 1):
+                            file_info = mapping.get(file_id, {})
+                            display_name = file_info.get('display_name', file_id)
+
+                            # 標註是否已在查詢結果中
+                            if file_id in seen_file_ids:
+                                st.write(f"{i}. 📄 {display_name} ✅ *（已在查詢結果中）*")
+                            else:
+                                st.write(f"{i}. 📄 {display_name} ⭐ *（額外參考）*")
             else:
                 st.error(f"❌ 查詢失敗：{result['error']}")
 
