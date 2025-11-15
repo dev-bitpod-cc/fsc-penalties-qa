@@ -828,12 +828,12 @@ def main():
                             sources = result.get('sources', [])
 
                             # 整合顯示 sources 數量（未去重）和原始列表
-                            with st.expander(f"📊 Gemini 返回的 sources 數量（未去重）: {len(sources)}", expanded=False):
+                            with st.expander(f"📊 sources 數量（未去重）: {len(sources)}", expanded=False):
                                 if sources:
                                     for i, source in enumerate(sources, 1):
                                         filename = source.get('filename', 'N/A')
                                         file_id = extract_file_id(filename, gemini_id_mapping)
-                                        st.caption(f"{i}. Gemini ID: `{filename}` → File ID: `{file_id}`")
+                                        st.caption(f"{i}. GID: `{filename}` → FileID: `{file_id}`")
                                 else:
                                     st.caption("無 sources")
 
@@ -906,9 +906,9 @@ def main():
                                         filename = item['filename']
                                         file_id = item['file_id']
                                         if file_id:
-                                            st.caption(f"{i}. Gemini ID: `{filename}` → File ID: `{file_id}` (不在 file_mapping 中)")
+                                            st.caption(f"{i}. GID: `{filename}` → FileID: `{file_id}` (不在 file_mapping 中)")
                                         else:
-                                            st.caption(f"{i}. Gemini ID: `{filename}` (無法提取 file_id)")
+                                            st.caption(f"{i}. GID: `{filename}` (無法提取 file_id)")
         else:
             st.error(f"❌ 查詢失敗：{result['error']}")
 
