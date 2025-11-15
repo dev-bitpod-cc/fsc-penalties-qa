@@ -230,15 +230,15 @@ def remove_social_media_noise(text: str) -> str:
 
 def display_grounding_sources_v2(sources: list, file_mapping: dict, gemini_id_mapping: dict, excluded_file_ids: set = None):
     """
-    顯示其他可參考內容（區塊3 - 新版）
+    顯示也可以另外參考（區塊3 - 新版）
 
-    只顯示不在查詢結果中的額外參考文件
+    只顯示不在查詢結果標題中的額外參考文件
 
     Args:
         sources: 從 query_penalties 返回的 sources 列表
         file_mapping: file_mapping.json 的內容
         gemini_id_mapping: Gemini ID 映射
-        excluded_file_ids: 已在查詢結果中列出的 file_ids（要排除的）
+        excluded_file_ids: 已在查詢結果標題中的 file_ids（要排除的）
     """
     if not sources:
         return
@@ -269,8 +269,8 @@ def display_grounding_sources_v2(sources: list, file_mapping: dict, gemini_id_ma
     if not additional_file_ids:
         return
 
-    # 4. 顯示其他可參考內容
-    st.subheader(f"📚 其他可參考內容 ({len(additional_file_ids)} 筆)")
+    # 4. 顯示也可以另外參考
+    st.subheader(f"📚 也可以另外參考 ({len(additional_file_ids)} 筆)")
 
     for file_id in additional_file_ids:
         # 查找 file_mapping
@@ -727,11 +727,22 @@ def main():
                 st.markdown("---")
                 response_text = result['text']
 
-                # 從 sources 提取案件連結（按順序）
+                # 先計算回答中有多少個標題（### 1. xxx）
+                import re
+                title_pattern = r'###\s*\d+\.\s+[^\n]+'
+                title_matches = re.findall(title_pattern, response_text)
+                num_titles = len(title_matches)
+
+                # 從 sources 提取案件連結（只取前 num_titles 個，對應有標題的案件）
                 case_urls = []
                 seen_file_ids = set()
+                count = 0
 
                 for source in result.get('sources', []):
+                    # 只處理有標題的案件數量
+                    if count >= num_titles:
+                        break
+
                     filename = source.get('filename', '')
                     file_id = extract_file_id(filename, gemini_id_mapping)
 
@@ -742,6 +753,7 @@ def main():
                         if detail_url:
                             case_urls.append(detail_url)
                             seen_file_ids.add(file_id)
+                            count += 1
 
                 # 為案件標題加入連結
                 response_with_case_links = insert_case_links_by_order(response_text, case_urls)
@@ -780,15 +792,15 @@ def main():
                 #         for item in original_urls:
                 #             st.markdown(f"- [{item['display_name']}]({item['url']})")
 
-                # ===== 區塊3：其他可參考內容（新版） =====
-                # 只顯示不在查詢結果中的額外參考文件
+                # ===== 區塊3：也可以另外參考（新版） =====
+                # 只顯示不在查詢結果標題中的額外參考文件
                 if result.get('sources') and len(result['sources']) > 0:
                     st.markdown("---")
                     display_grounding_sources_v2(
                         sources=result['sources'],
                         file_mapping=mapping,
                         gemini_id_mapping=gemini_id_mapping,
-                        excluded_file_ids=seen_file_ids  # 排除已在區塊1列出的文件
+                        excluded_file_ids=seen_file_ids  # 排除已在區塊1標題中的文件
                     )
 
                     # ===== 除錯資訊：顯示原始參考內容列表 =====
