@@ -819,6 +819,14 @@ def main():
                         st.info(f"📝 回答中的標題數量: {num_titles}")
                         st.info(f"✅ 加入查詢結果的文件數量: {len(seen_file_ids)}")
 
+                        # 顯示所有原始 sources（未去重）
+                        if sources:
+                            with st.expander("🔍 原始 sources 列表（未去重）", expanded=False):
+                                for i, source in enumerate(sources, 1):
+                                    filename = source.get('filename', 'N/A')
+                                    file_id = extract_file_id(filename, gemini_id_mapping)
+                                    st.caption(f"{i}. Gemini ID: `{filename}` → File ID: `{file_id}`")
+
                         if not sources:
                             st.warning("⚠️ Gemini 未返回任何參考文件（sources 為空）")
                             st.caption("可能原因：")
