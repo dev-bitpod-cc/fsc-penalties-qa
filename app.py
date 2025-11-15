@@ -16,10 +16,11 @@ from google.genai import types
 load_dotenv()
 
 # 載入映射檔
-@st.cache_data
 def load_file_mapping():
-    """載入檔案映射檔"""
+    """載入檔案映射檔（移除快取以確保始終使用最新版本）"""
     from pathlib import Path
+    import os
+
     mapping_file = Path(__file__).parent / 'file_mapping.json'
 
     if not mapping_file.exists():
@@ -28,14 +29,20 @@ def load_file_mapping():
     try:
         import json
         with open(mapping_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
+            data = json.load(f)
+
+        # 顯示檔案資訊供除錯
+        file_mtime = os.path.getmtime(mapping_file)
+        file_size = os.path.getsize(mapping_file) / (1024 * 1024)  # MB
+        # st.sidebar.text(f"📄 file_mapping.json\n更新時間: {datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S')}\n大小: {file_size:.2f} MB")
+
+        return data
     except Exception as e:
         st.warning(f"⚠️ 載入映射檔失敗: {e}")
         return {}
 
-@st.cache_data
 def load_gemini_id_mapping():
-    """載入 Gemini ID 反向映射檔（Gemini file_id → file_id）"""
+    """載入 Gemini ID 反向映射檔（Gemini file_id → file_id）（移除快取以確保始終使用最新版本）"""
     from pathlib import Path
     mapping_file = Path(__file__).parent / 'gemini_id_mapping.json'
 
