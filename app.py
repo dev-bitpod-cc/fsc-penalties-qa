@@ -807,54 +807,69 @@ def main():
                         excluded_file_ids=seen_file_ids  # 排除已在區塊1標題中的文件
                     )
 
-                    # ===== 除錯資訊：顯示原始參考內容列表 =====
-                    with st.expander("🔍 除錯資訊：Gemini 原始參考列表", expanded=False):
+                # ===== 除錯資訊：顯示原始參考內容列表 =====
+                # 移到條件外，即使 sources 為空也顯示（用於診斷問題）
+                st.markdown("---")
+                with st.expander("🔍 除錯資訊：Gemini 原始參考列表", expanded=False):
                         st.caption("以下是 Gemini File Search 返回的所有參考文件（去重後）")
 
-                        # 提取並去重所有 file_ids（包含映射失敗的）
-                        all_file_ids = []
-                        failed_mappings = []
-                        seen_debug = set()
+                        # 診斷資訊：檢查 sources 是否存在
+                        sources = result.get('sources', [])
+                        st.info(f"📊 Gemini 返回的 sources 數量: {len(sources)}")
+                        st.info(f"📝 回答中的標題數量: {num_titles}")
+                        st.info(f"✅ 加入查詢結果的文件數量: {len(seen_file_ids)}")
 
-                        for source in result['sources']:
-                            filename = source.get('filename', '')
-                            file_id = extract_file_id(filename, gemini_id_mapping)
+                        if not sources:
+                            st.warning("⚠️ Gemini 未返回任何參考文件（sources 為空）")
+                            st.caption("可能原因：")
+                            st.caption("1. Gemini 回應被截斷，導致 sources 資訊遺失")
+                            st.caption("2. File Search Store 查詢失敗")
+                            st.caption("3. 回應處理邏輯錯誤")
+                        else:
+                            # 提取並去重所有 file_ids（包含映射失敗的）
+                            all_file_ids = []
+                            failed_mappings = []
+                            seen_debug = set()
 
-                            # 檢查是否映射成功
-                            if file_id and file_id not in seen_debug:
-                                # 檢查是否在 file_mapping 中
-                                if file_id in mapping:
-                                    all_file_ids.append(file_id)
-                                    seen_debug.add(file_id)
+                            for source in sources:
+                                filename = source.get('filename', '')
+                                file_id = extract_file_id(filename, gemini_id_mapping)
+
+                                # 檢查是否映射成功
+                                if file_id and file_id not in seen_debug:
+                                    # 檢查是否在 file_mapping 中
+                                    if file_id in mapping:
+                                        all_file_ids.append(file_id)
+                                        seen_debug.add(file_id)
+                                    else:
+                                        # 映射失敗（file_id 不在 file_mapping 中）
+                                        failed_mappings.append({'filename': filename, 'file_id': file_id})
+                                elif not file_id and filename not in [f['filename'] for f in failed_mappings]:
+                                    # 完全無法提取 file_id
+                                    failed_mappings.append({'filename': filename, 'file_id': None})
+
+                            st.write(f"**總共 {len(all_file_ids)} 筆有效參考文件：**")
+
+                            for i, file_id in enumerate(all_file_ids, 1):
+                                file_info = mapping.get(file_id, {})
+                                display_name = file_info.get('display_name', file_id)
+
+                                # 標註是否已在查詢結果中
+                                if file_id in seen_file_ids:
+                                    st.write(f"{i}. 📄 {display_name} ✅ *（已在查詢結果中）*")
                                 else:
-                                    # 映射失敗（file_id 不在 file_mapping 中）
-                                    failed_mappings.append({'filename': filename, 'file_id': file_id})
-                            elif not file_id and filename not in [f['filename'] for f in failed_mappings]:
-                                # 完全無法提取 file_id
-                                failed_mappings.append({'filename': filename, 'file_id': None})
+                                    st.write(f"{i}. 📄 {display_name} ⭐ *（額外參考）*")
 
-                        st.write(f"**總共 {len(all_file_ids)} 筆有效參考文件：**")
-
-                        for i, file_id in enumerate(all_file_ids, 1):
-                            file_info = mapping.get(file_id, {})
-                            display_name = file_info.get('display_name', file_id)
-
-                            # 標註是否已在查詢結果中
-                            if file_id in seen_file_ids:
-                                st.write(f"{i}. 📄 {display_name} ✅ *（已在查詢結果中）*")
-                            else:
-                                st.write(f"{i}. 📄 {display_name} ⭐ *（額外參考）*")
-
-                        # 顯示映射失敗的檔案
-                        if failed_mappings:
-                            st.warning(f"⚠️ **{len(failed_mappings)} 筆映射失敗（已自動跳過）：**")
-                            for i, item in enumerate(failed_mappings, 1):
-                                filename = item['filename']
-                                file_id = item['file_id']
-                                if file_id:
-                                    st.caption(f"{i}. Gemini ID: `{filename}` → File ID: `{file_id}` (不在 file_mapping 中)")
-                                else:
-                                    st.caption(f"{i}. Gemini ID: `{filename}` (無法提取 file_id)")
+                            # 顯示映射失敗的檔案
+                            if failed_mappings:
+                                st.warning(f"⚠️ **{len(failed_mappings)} 筆映射失敗（已自動跳過）：**")
+                                for i, item in enumerate(failed_mappings, 1):
+                                    filename = item['filename']
+                                    file_id = item['file_id']
+                                    if file_id:
+                                        st.caption(f"{i}. Gemini ID: `{filename}` → File ID: `{file_id}` (不在 file_mapping 中)")
+                                    else:
+                                        st.caption(f"{i}. Gemini ID: `{filename}` (無法提取 file_id)")
             else:
                 st.error(f"❌ 查詢失敗：{result['error']}")
 
