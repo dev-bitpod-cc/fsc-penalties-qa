@@ -169,83 +169,144 @@ def insert_case_links_by_order(text: str, case_urls: list) -> str:
 
     return result
 
-def display_grounding_sources_v2(sources: list, file_mapping: dict, gemini_id_mapping: dict):
+def remove_social_media_noise(text: str) -> str:
     """
-    顯示 Gemini 參考來源（區塊3 - 新版）
+    移除原始文字中的社群媒體分享按鈕等雜訊
+
+    Args:
+        text: 原始文字
+
+    Returns:
+        清理後的文字
+    """
+    import re
+
+    # 社群媒體相關關鍵字
+    noise_patterns = [
+        r'facebook',
+        r'Facebook',
+        r'twitter',
+        r'Twitter',
+        r'line',
+        r'LINE',
+        r'分享',
+        r'列印',
+        r'轉寄',
+        r'友善列印',
+        r'回上一頁',
+        r':::',
+        r'回首頁',
+        r'網站導覽',
+        r'English',
+        r'兒童版',
+        r'行動版',
+        r'RSS',
+        r'字級大小',
+        r'小 中 大',
+    ]
+
+    # 移除包含這些關鍵字的行
+    lines = text.split('\n')
+    cleaned_lines = []
+
+    for line in lines:
+        line = line.strip()
+        # 跳過空行
+        if not line:
+            continue
+
+        # 檢查是否包含雜訊關鍵字
+        is_noise = False
+        for pattern in noise_patterns:
+            if re.search(pattern, line, re.IGNORECASE):
+                is_noise = True
+                break
+
+        if not is_noise:
+            cleaned_lines.append(line)
+
+    return '\n'.join(cleaned_lines)
+
+def display_grounding_sources_v2(sources: list, file_mapping: dict, gemini_id_mapping: dict, excluded_file_ids: set = None):
+    """
+    顯示其他可參考內容（區塊3 - 新版）
+
+    只顯示不在查詢結果中的額外參考文件
 
     Args:
         sources: 從 query_penalties 返回的 sources 列表
         file_mapping: file_mapping.json 的內容
         gemini_id_mapping: Gemini ID 映射
+        excluded_file_ids: 已在查詢結果中列出的 file_ids（要排除的）
     """
     if not sources:
-        st.info("無參考文件")
         return
 
-    # 處理 sources，計算同一文件的段落數
-    processed_sources = []
-    file_counts = {}
+    if excluded_file_ids is None:
+        excluded_file_ids = set()
+
+    # 1. 去重並提取 file_ids
+    unique_file_ids = []
+    seen = set()
 
     for source in sources:
         filename = source.get('filename', '')
-        snippet = source.get('snippet', '')
-
-        # 提取 file_id
         file_id = extract_file_id(filename, gemini_id_mapping)
-        if not file_id:
-            continue
 
-        # 計數（用於標註段落編號）
-        file_counts[file_id] = file_counts.get(file_id, 0) + 1
-        paragraph_num = file_counts[file_id]
+        if file_id and file_id not in seen:
+            unique_file_ids.append(file_id)
+            seen.add(file_id)
 
+    # 2. 過濾掉已在查詢結果中的文件
+    additional_file_ids = [fid for fid in unique_file_ids if fid not in excluded_file_ids]
+
+    # 3. 如果沒有額外的文件，不顯示整個區塊
+    if not additional_file_ids:
+        return
+
+    # 4. 顯示其他可參考內容
+    st.subheader(f"📚 其他可參考內容 ({len(additional_file_ids)} 筆)")
+
+    for file_id in additional_file_ids:
         # 查找 file_mapping
         file_info = file_mapping.get(file_id, {})
         display_name = file_info.get('display_name', file_id)
         detail_url = file_info.get('original_url', '')
-
-        processed_sources.append({
-            'file_id': file_id,
-            'display_name': display_name,
-            'paragraph_num': paragraph_num,
-            'detail_url': detail_url,
-            'snippet': snippet
-        })
-
-    # 計算每個 file_id 的總出現次數
-    file_totals = {}
-    for s in processed_sources:
-        file_id = s['file_id']
-        file_totals[file_id] = file_totals.get(file_id, 0) + 1
-
-    # 顯示參考內容
-    st.subheader(f"📚 參考內容 ({len(processed_sources)} 筆)")
-
-    for source in processed_sources:
-        file_id = source['file_id']
-        total_count = file_totals.get(file_id, 1)
-
-        # 決定是否標註段落編號
-        if total_count > 1:
-            label = f"📄 {source['display_name']}（段落{source['paragraph_num']}）"
-        else:
-            label = f"📄 {source['display_name']}"
+        original_content = file_info.get('original_content', {}).get('text', '')
 
         # 展開式顯示
-        with st.expander(label):
+        with st.expander(f"📄 {display_name}"):
             # 1. 顯示原始案件連結
-            if source['detail_url']:
-                st.markdown(f"🔗 [查看金管會原始公告]({source['detail_url']})")
+            if detail_url:
+                st.markdown(f"🔗 [查看金管會原始公告]({detail_url})")
                 st.markdown("---")
 
-            # 2. 顯示符合片段
-            st.markdown("**相關片段：**")
+            # 2. 顯示原始案件純文字內容
+            st.markdown("**原始案件內容：**")
 
-            # 渲染 markdown（Gemini 返回的 snippet）
-            if source['snippet']:
-                st.markdown(source['snippet'])
+            if original_content:
+                # 移除社群媒體雜訊
+                cleaned_content = remove_social_media_noise(original_content)
+
+                # 限制顯示長度，可滾動
+                if len(cleaned_content) > 2000:
+                    st.text_area(
+                        "",
+                        value=cleaned_content[:2000] + "\n\n...(內容過長，請點擊上方連結查看完整內容)",
+                        height=300,
+                        disabled=True,
+                        label_visibility="collapsed"
+                    )
+                else:
+                    st.text_area(
+                        "",
+                        value=cleaned_content,
+                        height=300,
+                        disabled=True,
+                        label_visibility="collapsed"
+                    )
             else:
-                st.caption("（無可用片段）")
+                st.caption("（無可用內容）")
 
 # 設定頁面
 st.set_page_config(
@@ -714,13 +775,15 @@ def main():
                 #         for item in original_urls:
                 #             st.markdown(f"- [{item['display_name']}]({item['url']})")
 
-                # ===== 區塊3：Gemini 參考來源（新版） =====
+                # ===== 區塊3：其他可參考內容（新版） =====
+                # 只顯示不在查詢結果中的額外參考文件
                 if result.get('sources') and len(result['sources']) > 0:
                     st.markdown("---")
                     display_grounding_sources_v2(
                         sources=result['sources'],
                         file_mapping=mapping,
-                        gemini_id_mapping=gemini_id_mapping
+                        gemini_id_mapping=gemini_id_mapping,
+                        excluded_file_ids=seen_file_ids  # 排除已在區塊1列出的文件
                     )
             else:
                 st.error(f"❌ 查詢失敗：{result['error']}")
