@@ -448,11 +448,6 @@ def query_penalties(client: genai.Client, query: str, store_id: str, model: str 
                         )
                     )
                 ],
-                tool_config=types.ToolConfig(
-                    function_calling_config=types.FunctionCallingConfig(
-                        mode='ANY'  # 強制使用 File Search 工具
-                    )
-                ),
                 temperature=0.1,
                 max_output_tokens=max_tokens,
                 system_instruction=system_instruction
