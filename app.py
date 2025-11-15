@@ -570,7 +570,6 @@ def main():
 
     # 標題
     st.title("⚖️ 金管會裁罰案件查詢系統")
-    st.markdown("查詢 2011-2025 年間的金融機構裁罰案件（共 495 筆）")
     st.info("💡 本系統為展示用，如遇畫面無反應，請重新整理頁面")
 
     # 初始化 Gemini
@@ -578,26 +577,9 @@ def main():
 
     # 側邊欄：篩選條件
     with st.sidebar:
-        # 模型選擇
-        st.header("🤖 AI 模型")
+        # 固定使用 Flash 模型（Pro 模型在 File Search 上有 hallucination 問題）
+        model = "gemini-2.5-flash"
 
-        # 顯示名稱到 model ID 的映射
-        model_display_to_id = {
-            "標準": "gemini-2.5-flash",
-            "專業（較慢）": "gemini-2.5-pro"
-        }
-
-        model_display = st.selectbox(
-            "選擇模型",
-            options=list(model_display_to_id.keys()),
-            index=0,
-            help="標準：速度快；專業：更準確但較慢"
-        )
-
-        # 轉換為實際的 model ID
-        model = model_display_to_id[model_display]
-
-        st.divider()
         st.header("🔍 篩選條件")
 
         # 日期範圍
@@ -654,31 +636,6 @@ def main():
         st.caption(f"銀行局：225 筆 (45.5%)")
         st.caption(f"保險局：222 筆 (44.8%)")
         st.caption(f"證券期貨局：47 筆 (9.5%)")
-
-    # 主要查詢區域
-    st.header("💬 查詢")
-
-    # 範例查詢
-    with st.expander("💡 查詢範例"):
-        st.markdown("""
-        **一般查詢**：
-        - 最近有哪些銀行被裁罰？
-        - 2024年保險業的裁罰案件有哪些？
-        - 查詢洗錢防制相關的裁罰案件
-
-        **特定主題**：
-        - 內部控制缺失的裁罰案例
-        - 客戶資料外洩相關裁罰
-        - 違反資訊安全的案件
-
-        **金額查詢**：
-        - 裁罰金額超過 1000 萬的案件
-        - 金額最高的 5 個裁罰案例
-
-        **趨勢分析**：
-        - 2023 vs 2024 年銀行局裁罰趨勢比較
-        - 最常見的違規類型是什麼？
-        """)
 
     # 初始化 session state（使用不同的變數名）
     if 'current_query' not in st.session_state:
@@ -741,93 +698,88 @@ def main():
             if min_penalty > 0:
                 filters['min_penalty'] = min_penalty
 
-            # 執行查詢
+            # 第一次查詢
             result = query_penalties(client, query, store_id, model, filters)
 
-            # 顯示結果
-            if result['success']:
-                st.success("✅ 查詢完成")
+            # 檢查是否需要重試（sources = 0 表示 Gemini 沒有使用 File Search）
+            retry_attempted = False
+            if result['success'] and len(result.get('sources', [])) == 0:
+                retry_attempted = True
+                st.info("🔄 正在重新查詢...")
+                result = query_penalties(client, query, store_id, model, filters)
 
-                # 載入映射檔（用於法條連結和原始連結）
-                mapping = load_file_mapping()
-                gemini_id_mapping = load_gemini_id_mapping()
-
-                # 收集所有參考文件中的法條連結（過濾無效法條）
-                all_law_links = {}
-                if result.get('sources') and len(result['sources']) > 0:
-                    for source in result['sources']:
-                        filename = source.get('filename', '')
-                        file_id = extract_file_id(filename, gemini_id_mapping)
-                        file_info = mapping.get(file_id, {})
-                        law_links = file_info.get('law_links', {})
-                        # 過濾掉無效法條（以「與」「同」等開頭的誤匹配）
-                        filtered_law_links = {
-                            law: link for law, link in law_links.items()
-                            if not law.startswith(('與', '同', '及', '或', '和'))
-                        }
-                        # 合併法條連結
-                        all_law_links.update(filtered_law_links)
-
-                # 區塊1：顯示回應（為法條和案件標題加入連結）
-                st.markdown("---")
-
-                # 🚨 重要：檢查 sources 是否為空（防止 Hallucination）
+        # 顯示結果
+        if result['success']:
+                # 檢查是否兩次查詢都沒有 sources（防止 Hallucination）
                 sources_count = len(result.get('sources', []))
-                if sources_count == 0:
-                    st.error("🚨 **警告：此回答可能不可靠！**")
-                    st.warning("""
-                    **原因**：Gemini 沒有使用裁罰案件資料庫（sources = 0）
+                if retry_attempted and sources_count == 0:
+                    # 兩次查詢都沒有使用 File Search，顯示友善訊息並停止
+                    st.warning("你查詢的問題在目前的文件庫中沒有合適的結果，請更具體的描述問題，或更換其他詢問方式。")
+                    # 不顯示查詢回答（避免顯示可能被捏造的內容）
+                else:
+                    # 有 sources 或第一次查詢就成功，正常顯示結果
+                    st.success("✅ 查詢完成")
 
-                    這表示回答可能來自：
-                    - Gemini 的內建知識（訓練數據，可能過時）
-                    - **編造的案例**（Hallucination）
-                    - 其他來源的資訊（非金管會裁罰案件）
+                    # 載入映射檔（用於法條連結和原始連結）
+                    mapping = load_file_mapping()
+                    gemini_id_mapping = load_gemini_id_mapping()
 
-                    **建議**：
-                    1. 請改用更明確的查詢方式，例如：
-                       「請從裁罰案件資料庫中查找 [您的問題]」
-                    2. 或者在下方除錯資訊中確認 sources 數量 > 0 後再信任回答
-                    3. 不要使用此回答中的具體案例資訊
-                    """)
+                    # 收集所有參考文件中的法條連結（過濾無效法條）
+                    all_law_links = {}
+                    if result.get('sources') and len(result['sources']) > 0:
+                        for source in result['sources']:
+                            filename = source.get('filename', '')
+                            file_id = extract_file_id(filename, gemini_id_mapping)
+                            file_info = mapping.get(file_id, {})
+                            law_links = file_info.get('law_links', {})
+                            # 過濾掉無效法條（以「與」「同」等開頭的誤匹配）
+                            filtered_law_links = {
+                                law: link for law, link in law_links.items()
+                                if not law.startswith(('與', '同', '及', '或', '和'))
+                            }
+                            # 合併法條連結
+                            all_law_links.update(filtered_law_links)
+
+                    # 區塊1：顯示回應（為法條和案件標題加入連結）
                     st.markdown("---")
 
-                response_text = result['text']
+                    response_text = result['text']
 
-                # 先計算回答中有多少個標題（### 1. xxx）
-                import re
-                title_pattern = r'###\s*\d+\.\s+[^\n]+'
-                title_matches = re.findall(title_pattern, response_text)
-                num_titles = len(title_matches)
+                    # 先計算回答中有多少個標題（### 1. xxx）
+                    import re
+                    title_pattern = r'###\s*\d+\.\s+[^\n]+'
+                    title_matches = re.findall(title_pattern, response_text)
+                    num_titles = len(title_matches)
 
-                # 從 sources 提取案件連結（只取前 num_titles 個，對應有標題的案件）
-                case_urls = []
-                seen_file_ids = set()
-                count = 0
+                    # 從 sources 提取案件連結（只取前 num_titles 個，對應有標題的案件）
+                    case_urls = []
+                    seen_file_ids = set()
+                    count = 0
 
-                for source in result.get('sources', []):
-                    # 只處理有標題的案件數量
-                    if count >= num_titles:
-                        break
+                    for source in result.get('sources', []):
+                        # 只處理有標題的案件數量
+                        if count >= num_titles:
+                            break
 
-                    filename = source.get('filename', '')
-                    file_id = extract_file_id(filename, gemini_id_mapping)
+                        filename = source.get('filename', '')
+                        file_id = extract_file_id(filename, gemini_id_mapping)
 
-                    # 去重（每個文件只取第一次出現）
-                    if file_id and file_id not in seen_file_ids:
-                        file_info = mapping.get(file_id, {})
-                        detail_url = file_info.get('original_url', '')
-                        if detail_url:
-                            case_urls.append(detail_url)
-                            seen_file_ids.add(file_id)
-                            count += 1
+                        # 去重（每個文件只取第一次出現）
+                        if file_id and file_id not in seen_file_ids:
+                            file_info = mapping.get(file_id, {})
+                            detail_url = file_info.get('original_url', '')
+                            if detail_url:
+                                case_urls.append(detail_url)
+                                seen_file_ids.add(file_id)
+                                count += 1
 
-                # 為案件標題加入連結
-                response_with_case_links = insert_case_links_by_order(response_text, case_urls)
+                    # 為案件標題加入連結
+                    response_with_case_links = insert_case_links_by_order(response_text, case_urls)
 
-                # 為法條加入連結
-                response_with_all_links = add_law_links_to_text(response_with_case_links, all_law_links)
+                    # 為法條加入連結
+                    response_with_all_links = add_law_links_to_text(response_with_case_links, all_law_links)
 
-                st.markdown(response_with_all_links)
+                    st.markdown(response_with_all_links)
 
                 # ===== 區塊2：相關裁罰案件原始公告（已註解） =====
                 # 註解原因：功能已整合到區塊1的標題連結
@@ -858,106 +810,105 @@ def main():
                 #         for item in original_urls:
                 #             st.markdown(f"- [{item['display_name']}]({item['url']})")
 
-                # ===== 區塊3：也可以另外參考（新版） =====
-                # 只顯示不在查詢結果標題中的額外參考文件
-                if result.get('sources') and len(result['sources']) > 0:
+                    # ===== 區塊3：也可以另外參考（新版） =====
+                    # 只顯示不在查詢結果標題中的額外參考文件
+                    if result.get('sources') and len(result['sources']) > 0:
+                        st.markdown("---")
+                        display_grounding_sources_v2(
+                            sources=result['sources'],
+                            file_mapping=mapping,
+                            gemini_id_mapping=gemini_id_mapping,
+                            excluded_file_ids=seen_file_ids  # 排除已在區塊1標題中的文件
+                        )
+
+                    # ===== 除錯資訊：整合到警告 expander =====
                     st.markdown("---")
-                    display_grounding_sources_v2(
-                        sources=result['sources'],
-                        file_mapping=mapping,
-                        gemini_id_mapping=gemini_id_mapping,
-                        excluded_file_ids=seen_file_ids  # 排除已在區塊1標題中的文件
-                    )
+                    with st.expander("⚠️ 本系統僅供參考，實際裁罰資訊請以金管會官網公告為準", expanded=False):
+                            # 診斷資訊：檢查 sources 是否存在
+                            sources = result.get('sources', [])
 
-                # ===== 除錯資訊：顯示原始參考內容列表 =====
-                # 移到條件外，即使 sources 為空也顯示（用於診斷問題）
-                st.markdown("---")
-                with st.expander("🔍 除錯資訊：Gemini 原始參考列表", expanded=False):
-                        # 診斷資訊：檢查 sources 是否存在
-                        sources = result.get('sources', [])
-
-                        # 整合顯示 sources 數量（未去重）和原始列表
-                        with st.expander(f"📊 Gemini 返回的 sources 數量（未去重）: {len(sources)}", expanded=False):
-                            if sources:
-                                for i, source in enumerate(sources, 1):
-                                    filename = source.get('filename', 'N/A')
-                                    file_id = extract_file_id(filename, gemini_id_mapping)
-                                    st.caption(f"{i}. Gemini ID: `{filename}` → File ID: `{file_id}`")
-                            else:
-                                st.caption("無 sources")
-
-                        st.info(f"📝 回答中的標題數量: {num_titles}")
-                        st.info(f"✅ 加入查詢結果的文件數量: {len(seen_file_ids)}")
-
-                        if not sources:
-                            st.warning("⚠️ Gemini 未返回任何參考文件（sources 為空）")
-
-                            # 顯示詳細的診斷資訊
-                            debug_info = result.get('debug_info', {})
-                            if debug_info:
-                                with st.expander("🔧 詳細診斷資訊", expanded=True):
-                                    st.caption("Response 結構檢查：")
-                                    st.json(debug_info)
-
-                                    # 根據診斷資訊提供具體建議
-                                    if not debug_info.get('has_candidates'):
-                                        st.error("❌ Response 沒有 candidates")
-                                    elif not debug_info.get('has_grounding_metadata'):
-                                        st.error("❌ Candidate 沒有 grounding_metadata（File Search 可能未生效）")
-                                    elif not debug_info.get('has_grounding_supports') and not debug_info.get('has_grounding_chunks'):
-                                        st.error("❌ grounding_metadata 存在，但沒有 grounding_supports 或 grounding_chunks")
-                                    elif debug_info.get('grounding_supports_count') == 0 and debug_info.get('grounding_chunks_count') == 0:
-                                        st.error("❌ grounding_supports 和 grounding_chunks 都為空")
-
-                            st.caption("可能原因：")
-                            st.caption("1. Gemini 回應被截斷，導致 sources 資訊遺失")
-                            st.caption("2. File Search Store 查詢失敗")
-                            st.caption("3. 回應處理邏輯錯誤")
-                        else:
-                            # 提取並去重所有 file_ids（包含映射失敗的）
-                            all_file_ids = []
-                            failed_mappings = []
-                            seen_debug = set()
-
-                            for source in sources:
-                                filename = source.get('filename', '')
-                                file_id = extract_file_id(filename, gemini_id_mapping)
-
-                                # 檢查是否映射成功
-                                if file_id and file_id not in seen_debug:
-                                    # 檢查是否在 file_mapping 中
-                                    if file_id in mapping:
-                                        all_file_ids.append(file_id)
-                                        seen_debug.add(file_id)
-                                    else:
-                                        # 映射失敗（file_id 不在 file_mapping 中）
-                                        failed_mappings.append({'filename': filename, 'file_id': file_id})
-                                elif not file_id and filename not in [f['filename'] for f in failed_mappings]:
-                                    # 完全無法提取 file_id
-                                    failed_mappings.append({'filename': filename, 'file_id': None})
-
-                            st.write(f"**總共 {len(all_file_ids)} 筆有效參考文件：**")
-
-                            for i, file_id in enumerate(all_file_ids, 1):
-                                file_info = mapping.get(file_id, {})
-                                display_name = file_info.get('display_name', file_id)
-
-                                # 標註是否已在查詢結果中
-                                if file_id in seen_file_ids:
-                                    st.write(f"{i}. 📄 {display_name} ✅ *（已在查詢結果中）*")
+                            # 整合顯示 sources 數量（未去重）和原始列表
+                            with st.expander(f"📊 Gemini 返回的 sources 數量（未去重）: {len(sources)}", expanded=False):
+                                if sources:
+                                    for i, source in enumerate(sources, 1):
+                                        filename = source.get('filename', 'N/A')
+                                        file_id = extract_file_id(filename, gemini_id_mapping)
+                                        st.caption(f"{i}. Gemini ID: `{filename}` → File ID: `{file_id}`")
                                 else:
-                                    st.write(f"{i}. 📄 {display_name} ⭐ *（額外參考）*")
+                                    st.caption("無 sources")
 
-                            # 顯示映射失敗的檔案
-                            if failed_mappings:
-                                st.warning(f"⚠️ **{len(failed_mappings)} 筆映射失敗（已自動跳過）：**")
-                                for i, item in enumerate(failed_mappings, 1):
-                                    filename = item['filename']
-                                    file_id = item['file_id']
-                                    if file_id:
-                                        st.caption(f"{i}. Gemini ID: `{filename}` → File ID: `{file_id}` (不在 file_mapping 中)")
+                            st.info(f"📝 回答中的標題數量: {num_titles}")
+                            st.info(f"✅ 加入查詢結果的文件數量: {len(seen_file_ids)}")
+
+                            if not sources:
+                                st.warning("⚠️ Gemini 未返回任何參考文件（sources 為空）")
+
+                                # 顯示詳細的診斷資訊
+                                debug_info = result.get('debug_info', {})
+                                if debug_info:
+                                    with st.expander("🔧 詳細診斷資訊", expanded=True):
+                                        st.caption("Response 結構檢查：")
+                                        st.json(debug_info)
+
+                                        # 根據診斷資訊提供具體建議
+                                        if not debug_info.get('has_candidates'):
+                                            st.error("❌ Response 沒有 candidates")
+                                        elif not debug_info.get('has_grounding_metadata'):
+                                            st.error("❌ Candidate 沒有 grounding_metadata（File Search 可能未生效）")
+                                        elif not debug_info.get('has_grounding_supports') and not debug_info.get('has_grounding_chunks'):
+                                            st.error("❌ grounding_metadata 存在，但沒有 grounding_supports 或 grounding_chunks")
+                                        elif debug_info.get('grounding_supports_count') == 0 and debug_info.get('grounding_chunks_count') == 0:
+                                            st.error("❌ grounding_supports 和 grounding_chunks 都為空")
+
+                                st.caption("可能原因：")
+                                st.caption("1. Gemini 回應被截斷，導致 sources 資訊遺失")
+                                st.caption("2. File Search Store 查詢失敗")
+                                st.caption("3. 回應處理邏輯錯誤")
+                            else:
+                                # 提取並去重所有 file_ids（包含映射失敗的）
+                                all_file_ids = []
+                                failed_mappings = []
+                                seen_debug = set()
+
+                                for source in sources:
+                                    filename = source.get('filename', '')
+                                    file_id = extract_file_id(filename, gemini_id_mapping)
+
+                                    # 檢查是否映射成功
+                                    if file_id and file_id not in seen_debug:
+                                        # 檢查是否在 file_mapping 中
+                                        if file_id in mapping:
+                                            all_file_ids.append(file_id)
+                                            seen_debug.add(file_id)
+                                        else:
+                                            # 映射失敗（file_id 不在 file_mapping 中）
+                                            failed_mappings.append({'filename': filename, 'file_id': file_id})
+                                    elif not file_id and filename not in [f['filename'] for f in failed_mappings]:
+                                        # 完全無法提取 file_id
+                                        failed_mappings.append({'filename': filename, 'file_id': None})
+
+                                st.write(f"**總共 {len(all_file_ids)} 筆有效參考文件：**")
+
+                                for i, file_id in enumerate(all_file_ids, 1):
+                                    file_info = mapping.get(file_id, {})
+                                    display_name = file_info.get('display_name', file_id)
+
+                                    # 標註是否已在查詢結果中
+                                    if file_id in seen_file_ids:
+                                        st.write(f"{i}. 📄 {display_name} ✅ *（已在查詢結果中）*")
                                     else:
-                                        st.caption(f"{i}. Gemini ID: `{filename}` (無法提取 file_id)")
+                                        st.write(f"{i}. 📄 {display_name} ⭐ *（額外參考）*")
+
+                                # 顯示映射失敗的檔案
+                                if failed_mappings:
+                                    st.warning(f"⚠️ **{len(failed_mappings)} 筆映射失敗（已自動跳過）：**")
+                                    for i, item in enumerate(failed_mappings, 1):
+                                        filename = item['filename']
+                                        file_id = item['file_id']
+                                        if file_id:
+                                            st.caption(f"{i}. Gemini ID: `{filename}` → File ID: `{file_id}` (不在 file_mapping 中)")
+                                        else:
+                                            st.caption(f"{i}. Gemini ID: `{filename}` (無法提取 file_id)")
             else:
                 st.error(f"❌ 查詢失敗：{result['error']}")
 
@@ -967,7 +918,6 @@ def main():
     # 頁尾
     st.divider()
     st.caption("資料來源：金融監督管理委員會")
-    st.caption("⚠️ 本系統僅供參考，實際裁罰資訊請以金管會官網公告為準")
 
 if __name__ == "__main__":
     main()
