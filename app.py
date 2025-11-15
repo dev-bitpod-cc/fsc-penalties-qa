@@ -770,6 +770,27 @@ def main():
 
                 # 區塊1：顯示回應（為法條和案件標題加入連結）
                 st.markdown("---")
+
+                # 🚨 重要：檢查 sources 是否為空（防止 Hallucination）
+                sources_count = len(result.get('sources', []))
+                if sources_count == 0:
+                    st.error("🚨 **警告：此回答可能不可靠！**")
+                    st.warning("""
+                    **原因**：Gemini 沒有使用裁罰案件資料庫（sources = 0）
+
+                    這表示回答可能來自：
+                    - Gemini 的內建知識（訓練數據，可能過時）
+                    - **編造的案例**（Hallucination）
+                    - 其他來源的資訊（非金管會裁罰案件）
+
+                    **建議**：
+                    1. 請改用更明確的查詢方式，例如：
+                       「請從裁罰案件資料庫中查找 [您的問題]」
+                    2. 或者在下方除錯資訊中確認 sources 數量 > 0 後再信任回答
+                    3. 不要使用此回答中的具體案例資訊
+                    """)
+                    st.markdown("---")
+
                 response_text = result['text']
 
                 # 先計算回答中有多少個標題（### 1. xxx）
