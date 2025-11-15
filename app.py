@@ -122,6 +122,131 @@ def add_law_links_to_text(text: str, law_links_dict: dict) -> str:
 
     return result
 
+def insert_case_links_by_order(text: str, case_urls: list) -> str:
+    """
+    按順序將案件標題轉換為連結（區塊1用）
+
+    Args:
+        text: Gemini 回答文字
+        case_urls: 案件連結列表（按順序，從 grounding_metadata 提取）
+
+    Returns:
+        插入連結後的文字
+    """
+    import re
+
+    if not case_urls:
+        return text
+
+    # 找出所有標題：### 1. [標題內容]
+    pattern = r'(###\s*\d+\.\s+)([^\n]+)'
+    matches = list(re.finditer(pattern, text))
+
+    if not matches:
+        return text
+
+    # 從後往前替換（避免位置偏移）
+    result = text
+    for i, match in enumerate(reversed(matches)):
+        # 反向索引
+        idx = len(matches) - 1 - i
+
+        # 檢查是否有對應的 URL
+        if idx >= len(case_urls):
+            continue
+
+        prefix = match.group(1)      # "### 1. "
+        title = match.group(2).strip()  # "三商美邦人壽保險股份..."
+        url = case_urls[idx]
+
+        # 檢查是否已經是連結（避免重複替換）
+        if title.startswith('[') and '](' in title:
+            continue
+
+        # 替換為連結
+        new_text = f"{prefix}[{title}]({url})"
+        result = result[:match.start()] + new_text + result[match.end():]
+
+    return result
+
+def display_grounding_sources_v2(sources: list, file_mapping: dict, gemini_id_mapping: dict):
+    """
+    顯示 Gemini 參考來源（區塊3 - 新版）
+
+    Args:
+        sources: 從 query_penalties 返回的 sources 列表
+        file_mapping: file_mapping.json 的內容
+        gemini_id_mapping: Gemini ID 映射
+    """
+    if not sources:
+        st.info("無參考文件")
+        return
+
+    # 處理 sources，計算同一文件的段落數
+    processed_sources = []
+    file_counts = {}
+
+    for source in sources:
+        filename = source.get('filename', '')
+        snippet = source.get('snippet', '')
+
+        # 提取 file_id
+        file_id = extract_file_id(filename, gemini_id_mapping)
+        if not file_id:
+            continue
+
+        # 計數（用於標註段落編號）
+        file_counts[file_id] = file_counts.get(file_id, 0) + 1
+        paragraph_num = file_counts[file_id]
+
+        # 查找 file_mapping
+        file_info = file_mapping.get(file_id, {})
+        display_name = file_info.get('display_name', file_id)
+        detail_url = file_info.get('original_url', '')
+
+        processed_sources.append({
+            'file_id': file_id,
+            'display_name': display_name,
+            'paragraph_num': paragraph_num,
+            'detail_url': detail_url,
+            'snippet': snippet
+        })
+
+    # 計算每個 file_id 的總出現次數
+    file_totals = {}
+    for s in processed_sources:
+        file_id = s['file_id']
+        file_totals[file_id] = file_totals.get(file_id, 0) + 1
+
+    # 顯示參考來源
+    st.subheader(f"📚 Gemini 參考來源 ({len(processed_sources)} 筆)")
+
+    for source in processed_sources:
+        file_id = source['file_id']
+        total_count = file_totals.get(file_id, 1)
+
+        # 決定是否標註段落編號
+        if total_count > 1:
+            label = f"📄 {source['display_name']}（段落{source['paragraph_num']}）"
+        else:
+            label = f"📄 {source['display_name']}"
+
+        # 展開式顯示
+        with st.expander(label):
+            # 1. 顯示原始案件連結
+            if source['detail_url']:
+                st.markdown(f"🔗 [查看金管會原始公告]({source['detail_url']})")
+                st.markdown("---")
+
+            # 2. 顯示符合片段
+            st.markdown("**相關片段：**")
+
+            # 渲染 markdown（Gemini 返回的 snippet）
+            if source['snippet']:
+                st.markdown(source['snippet'])
+            else:
+                st.caption("（無可用片段）")
+
 # 設定頁面
 st.set_page_config(
     page_title="金管會裁罰案件查詢系統",
@@ -522,119 +647,71 @@ def main():
                         # 合併法條連結
                         all_law_links.update(filtered_law_links)
 
-                # 區塊1：顯示回應（為法條加入連結）
+                # 區塊1：顯示回應（為法條和案件標題加入連結）
                 st.markdown("---")
                 response_text = result['text']
-                # 在回應中為法條加入連結
-                response_with_links = add_law_links_to_text(response_text, all_law_links)
-                st.markdown(response_with_links)
 
-                # 新增：從參考文件中提取並顯示原始連結
-                if result.get('sources') and len(result['sources']) > 0:
-                    # 收集所有原始連結（去重）
-                    original_urls = []
-                    seen_urls = set()
+                # 從 sources 提取案件連結（按順序）
+                case_urls = []
+                seen_file_ids = set()
 
-                    for source in result['sources']:
-                        filename = source.get('filename', '')
-                        file_id = extract_file_id(filename, gemini_id_mapping)
+                for source in result.get('sources', []):
+                    filename = source.get('filename', '')
+                    file_id = extract_file_id(filename, gemini_id_mapping)
+
+                    # 去重（每個文件只取第一次出現）
+                    if file_id and file_id not in seen_file_ids:
                         file_info = mapping.get(file_id, {})
-                        url = file_info.get('original_url', '')
+                        detail_url = file_info.get('original_url', '')
+                        if detail_url:
+                            case_urls.append(detail_url)
+                            seen_file_ids.add(file_id)
 
-                        if url and url not in seen_urls:
-                            original_urls.append({
-                                'url': url,
-                                'display_name': file_info.get('display_name', file_id)
-                            })
-                            seen_urls.add(url)
+                # 為案件標題加入連結
+                response_with_case_links = insert_case_links_by_order(response_text, case_urls)
 
-                    # 顯示原始連結
-                    if original_urls:
-                        st.markdown("---")
-                        st.markdown("**🔗 相關裁罰案件原始公告**")
-                        for item in original_urls:
-                            st.markdown(f"- [{item['display_name']}]({item['url']})")
+                # 為法條加入連結
+                response_with_all_links = add_law_links_to_text(response_with_case_links, all_law_links)
 
-                # 區塊2：參考文件
+                st.markdown(response_with_all_links)
+
+                # ===== 區塊2：相關裁罰案件原始公告（已註解） =====
+                # 註解原因：功能已整合到區塊1的標題連結
+                # 保留程式碼供未來參考
+                #
+                # if result.get('sources') and len(result['sources']) > 0:
+                #     # 收集所有原始連結（去重）
+                #     original_urls = []
+                #     seen_urls = set()
+                #
+                #     for source in result['sources']:
+                #         filename = source.get('filename', '')
+                #         file_id = extract_file_id(filename, gemini_id_mapping)
+                #         file_info = mapping.get(file_id, {})
+                #         url = file_info.get('original_url', '')
+                #
+                #         if url and url not in seen_urls:
+                #             original_urls.append({
+                #                 'url': url,
+                #                 'display_name': file_info.get('display_name', file_id)
+                #             })
+                #             seen_urls.add(url)
+                #
+                #     # 顯示原始連結
+                #     if original_urls:
+                #         st.markdown("---")
+                #         st.markdown("**🔗 相關裁罰案件原始公告**")
+                #         for item in original_urls:
+                #             st.markdown(f"- [{item['display_name']}]({item['url']})")
+
+                # ===== 區塊3：Gemini 參考來源（新版） =====
                 if result.get('sources') and len(result['sources']) > 0:
                     st.markdown("---")
-                    st.subheader(f"📚 參考文件 ({len(result['sources'])} 筆)")
-                    st.caption("點擊展開可查看完整原始內容")
-
-                    # 除錯資訊
-                    with st.expander("🔍 除錯資訊", expanded=False):
-                        st.write(f"映射檔載入狀態: {'✅ 成功' if mapping else '❌ 失敗'}")
-                        st.write(f"映射檔筆數: {len(mapping)}")
-                        st.write(f"Gemini ID 映射檔載入狀態: {'✅ 成功' if gemini_id_mapping else '❌ 失敗'}")
-                        st.write(f"Gemini ID 映射檔筆數: {len(gemini_id_mapping)}")
-                        st.write(f"**收集到的法條連結總數: {len(all_law_links)}**")
-                        if all_law_links:
-                            st.write("法條連結範例（前3個）:")
-                            for law, link in list(all_law_links.items())[:3]:
-                                st.write(f"  - {law}: {link[:50]}...")
-                        if result['sources']:
-                            st.write("")
-                            st.write("第一個來源完整結構:")
-                            st.json(result['sources'][0])
-                            # 顯示映射過程
-                            first_filename = result['sources'][0].get('filename', '')
-                            first_file_id = extract_file_id(first_filename, gemini_id_mapping)
-                            st.write(f"檔名映射: {first_filename} → {first_file_id}")
-                            # 顯示法條資訊
-                            first_file_info = mapping.get(first_file_id, {})
-                            first_laws = first_file_info.get('applicable_laws', [])
-                            first_law_links = first_file_info.get('law_links', {})
-                            st.write(f"第一個來源適用法條數: {len(first_laws)}")
-                            st.write(f"第一個來源法條連結數: {len(first_law_links)}")
-
-                    for i, source in enumerate(result['sources'], 1):
-                        # 從映射檔取得資訊
-                        filename = source.get('filename', '')
-                        file_id = extract_file_id(filename, gemini_id_mapping)
-                        file_info = mapping.get(file_id, {})
-
-                        # 顯示名稱：日期_來源_機構
-                        display_name = file_info.get('display_name', f"來源 {i}")
-                        original_url = file_info.get('original_url', '')
-                        original_content = file_info.get('original_content', {}).get('text', source.get('snippet', ''))
-
-                        # 使用 expander 顯示
-                        with st.expander(f"📄 {display_name}", expanded=False):
-                            # 原始網頁連結
-                            if original_url:
-                                st.markdown(f"🔗 [查看原始公告]({original_url})")
-                                st.markdown("")  # 空行
-
-                            # 適用法條與連結（過濾無效法條）
-                            applicable_laws = file_info.get('applicable_laws', [])
-                            law_links = file_info.get('law_links', {})
-
-                            # 過濾掉無效法條
-                            valid_laws = [
-                                law for law in applicable_laws
-                                if not law.startswith(('與', '同', '及', '或', '和'))
-                            ]
-
-                            if valid_laws:
-                                st.markdown("**📜 適用法條**：")
-                                for law in valid_laws:
-                                    # 如果有法規資料庫連結，顯示為可點擊連結
-                                    if law in law_links:
-                                        st.markdown(f"- [{law}]({law_links[law]}) 🔗")
-                                    else:
-                                        st.markdown(f"- {law}")
-                                st.markdown("")  # 空行
-
-                            # 顯示原始內容
-                            if original_content:
-                                st.markdown("**原始內容**：")
-                                # 限制顯示長度避免過長
-                                if len(original_content) > 2000:
-                                    st.text(original_content[:2000] + "\n\n...(內容過長，請點擊上方連結查看完整內容)")
-                                else:
-                                    st.text(original_content)
-                            else:
-                                st.caption("（無可用內容）")
+                    display_grounding_sources_v2(
+                        sources=result['sources'],
+                        file_mapping=mapping,
+                        gemini_id_mapping=gemini_id_mapping
+                    )
             else:
                 st.error(f"❌ 查詢失敗：{result['error']}")
 
