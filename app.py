@@ -451,11 +451,32 @@ def query_penalties(client: genai.Client, query: str, store_id: str, model: str 
         sources = []
         seen_files = {}  # 用於去重
 
+        # 診斷資訊（用於排查 sources 提取失敗）
+        debug_info = {
+            'has_candidates': False,
+            'has_grounding_metadata': False,
+            'has_grounding_supports': False,
+            'has_grounding_chunks': False,
+            'grounding_supports_count': 0,
+            'grounding_chunks_count': 0
+        }
+
         if hasattr(response, 'candidates') and len(response.candidates) > 0:
+            debug_info['has_candidates'] = True
             candidate = response.candidates[0]
 
             if hasattr(candidate, 'grounding_metadata') and candidate.grounding_metadata:
+                debug_info['has_grounding_metadata'] = True
                 metadata = candidate.grounding_metadata
+
+                # 記錄 grounding_supports 和 grounding_chunks 的狀態
+                if hasattr(metadata, 'grounding_supports'):
+                    debug_info['has_grounding_supports'] = bool(metadata.grounding_supports)
+                    debug_info['grounding_supports_count'] = len(metadata.grounding_supports) if metadata.grounding_supports else 0
+
+                if hasattr(metadata, 'grounding_chunks'):
+                    debug_info['has_grounding_chunks'] = bool(metadata.grounding_chunks)
+                    debug_info['grounding_chunks_count'] = len(metadata.grounding_chunks) if metadata.grounding_chunks else 0
 
                 # 優先從 grounding_supports 提取（包含引用資訊）
                 if hasattr(metadata, 'grounding_supports') and metadata.grounding_supports:
@@ -521,7 +542,8 @@ def query_penalties(client: genai.Client, query: str, store_id: str, model: str 
         return {
             'success': True,
             'text': response.text,
-            'sources': sources
+            'sources': sources,
+            'debug_info': debug_info  # 診斷資訊
         }
 
     except Exception as e:
@@ -836,6 +858,24 @@ def main():
 
                         if not sources:
                             st.warning("⚠️ Gemini 未返回任何參考文件（sources 為空）")
+
+                            # 顯示詳細的診斷資訊
+                            debug_info = result.get('debug_info', {})
+                            if debug_info:
+                                with st.expander("🔧 詳細診斷資訊", expanded=True):
+                                    st.caption("Response 結構檢查：")
+                                    st.json(debug_info)
+
+                                    # 根據診斷資訊提供具體建議
+                                    if not debug_info.get('has_candidates'):
+                                        st.error("❌ Response 沒有 candidates")
+                                    elif not debug_info.get('has_grounding_metadata'):
+                                        st.error("❌ Candidate 沒有 grounding_metadata（File Search 可能未生效）")
+                                    elif not debug_info.get('has_grounding_supports') and not debug_info.get('has_grounding_chunks'):
+                                        st.error("❌ grounding_metadata 存在，但沒有 grounding_supports 或 grounding_chunks")
+                                    elif debug_info.get('grounding_supports_count') == 0 and debug_info.get('grounding_chunks_count') == 0:
+                                        st.error("❌ grounding_supports 和 grounding_chunks 都為空")
+
                             st.caption("可能原因：")
                             st.caption("1. Gemini 回應被截斷，導致 sources 資訊遺失")
                             st.caption("2. File Search Store 查詢失敗")
