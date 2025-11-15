@@ -418,6 +418,10 @@ def query_penalties(client: genai.Client, query: str, store_id: str, model: str 
             if filter_parts:
                 full_query += "\n\n篩選條件：\n" + "\n".join(f"- {p}" for p in filter_parts)
 
+        # 根據模型類型設定 token 限制
+        # Pro 模型通常提供更詳細的回答，需要更多 tokens
+        max_tokens = 8192 if 'pro' in model.lower() else 4096
+
         # 使用 File Search Store 進行查詢（使用正確的型別物件）
         response = client.models.generate_content(
             model=model,  # 使用用戶選擇的模型
@@ -431,7 +435,7 @@ def query_penalties(client: genai.Client, query: str, store_id: str, model: str 
                     )
                 ],
                 temperature=0.1,
-                max_output_tokens=2048,
+                max_output_tokens=max_tokens,
                 system_instruction=system_instruction
             )
         )
