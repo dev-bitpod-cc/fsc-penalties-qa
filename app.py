@@ -218,8 +218,8 @@ def display_grounding_sources_v2(sources: list, file_mapping: dict, gemini_id_ma
         file_id = s['file_id']
         file_totals[file_id] = file_totals.get(file_id, 0) + 1
 
-    # 顯示參考來源
-    st.subheader(f"📚 Gemini 參考來源 ({len(processed_sources)} 筆)")
+    # 顯示參考內容
+    st.subheader(f"📚 參考內容 ({len(processed_sources)} 筆)")
 
     for source in processed_sources:
         file_id = source['file_id']
@@ -469,12 +469,22 @@ def main():
     with st.sidebar:
         # 模型選擇
         st.header("🤖 AI 模型")
-        model = st.selectbox(
+
+        # 顯示名稱到 model ID 的映射
+        model_display_to_id = {
+            "標準": "gemini-2.5-flash",
+            "專業（較慢）": "gemini-2.5-pro"
+        }
+
+        model_display = st.selectbox(
             "選擇模型",
-            options=["gemini-2.5-flash", "gemini-2.5-pro"],
+            options=list(model_display_to_id.keys()),
             index=0,
-            help="Flash 速度快且成本低；Pro 更準確但較慢"
+            help="標準：速度快；專業：更準確但較慢"
         )
+
+        # 轉換為實際的 model ID
+        model = model_display_to_id[model_display]
 
         st.divider()
         st.header("🔍 篩選條件")
