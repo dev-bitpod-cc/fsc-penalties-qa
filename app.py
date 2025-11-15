@@ -909,8 +909,8 @@ def main():
                                             st.caption(f"{i}. Gemini ID: `{filename}` → File ID: `{file_id}` (不在 file_mapping 中)")
                                         else:
                                             st.caption(f"{i}. Gemini ID: `{filename}` (無法提取 file_id)")
-            else:
-                st.error(f"❌ 查詢失敗：{result['error']}")
+        else:
+            st.error(f"❌ 查詢失敗：{result['error']}")
 
     elif search_button and not query:
         st.warning("⚠️ 請輸入查詢內容")
