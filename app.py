@@ -633,9 +633,6 @@ def main():
         st.caption("📊 資料庫資訊")
         st.caption(f"總案件數：495 筆")
         st.caption(f"日期範圍：2011-11-09 至 2025-09-25")
-        st.caption(f"銀行局：225 筆 (45.5%)")
-        st.caption(f"保險局：222 筆 (44.8%)")
-        st.caption(f"證券期貨局：47 筆 (9.5%)")
 
     # 初始化 session state（使用不同的變數名）
     if 'current_query' not in st.session_state:
