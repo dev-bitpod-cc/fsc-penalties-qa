@@ -773,64 +773,15 @@ def main():
     # 初始化 Gemini
     client, store_id = init_gemini()
 
-    # 側邊欄：篩選條件
+    # 側邊欄：資料庫資訊
     with st.sidebar:
         # 固定使用 Flash 模型（Pro 模型在 File Search 上有 hallucination 問題）
         model = "gemini-2.5-flash"
 
-        st.header("🔍 篩選條件")
-
-        # 日期範圍
-        st.subheader("日期範圍（可選）")
-        enable_date_filter = st.checkbox("啟用日期篩選", value=False)
-
-        if enable_date_filter:
-            col1, col2 = st.columns(2)
-            with col1:
-                start_date = st.date_input(
-                    "開始日期",
-                    value=date(2020, 1, 1),
-                    min_value=date(2011, 1, 1),
-                    max_value=date.today()
-                )
-            with col2:
-                end_date = st.date_input(
-                    "結束日期",
-                    value=date.today(),
-                    min_value=date(2011, 1, 1),
-                    max_value=date.today()
-                )
-        else:
-            start_date = None
-            end_date = None
-
-        # 來源單位
-        st.subheader("來源單位")
-        source_units = st.multiselect(
-            "選擇單位",
-            options=["銀行局", "保險局", "證券期貨局", "檢查局"],
-            default=[]
-        )
-
-        # 裁罰金額
-        st.subheader("裁罰金額")
-        min_penalty = st.number_input(
-            "最低金額（元）",
-            min_value=0,
-            value=0,
-            step=100000,
-            format="%d"
-        )
-
-        # 清除篩選
-        if st.button("清除所有篩選", use_container_width=True):
-            st.rerun()
-
         # 顯示資料庫資訊
-        st.divider()
-        st.caption("📊 資料庫資訊")
-        st.caption(f"總案件數：495 筆")
-        st.caption(f"日期範圍：2011-11-09 至 2025-09-25")
+        st.header("📊 資料庫資訊")
+        st.caption(f"總案件數：490 筆")
+        st.caption(f"日期範圍：2012-01-12 至 2025-09-25")
 
     # 初始化 session state（使用不同的變數名）
     if 'current_query' not in st.session_state:
@@ -880,28 +831,15 @@ def main():
     # 執行查詢
     if search_button and query:
         with st.spinner("🔍 查詢中..."):
-            # 準備篩選條件
-            filters = {}
-
-            if start_date and end_date:
-                filters['start_date'] = start_date.strftime('%Y-%m-%d')
-                filters['end_date'] = end_date.strftime('%Y-%m-%d')
-
-            if source_units:
-                filters['source_units'] = source_units
-
-            if min_penalty > 0:
-                filters['min_penalty'] = min_penalty
-
             # 第一次查詢
-            result = query_penalties(client, query, store_id, model, filters)
+            result = query_penalties(client, query, store_id, model)
 
             # 檢查是否需要重試（sources = 0 表示 Gemini 沒有使用 File Search）
             retry_attempted = False
             if result['success'] and len(result.get('sources', [])) == 0:
                 retry_attempted = True
                 st.info("🔄 正在重新查詢...")
-                result = query_penalties(client, query, store_id, model, filters)
+                result = query_penalties(client, query, store_id, model)
 
         # 顯示結果
         if result['success']:
