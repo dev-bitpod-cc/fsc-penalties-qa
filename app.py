@@ -117,19 +117,13 @@ def add_law_links_to_text(text: str, law_links_dict: dict) -> str:
     result = text
     replaced_positions = set()  # 記錄已替換的位置，避免重複替換
 
+    # === 第一階段：處理完整法條名稱 ===
     for law in sorted_laws:
-        # 跳過簡寫形式（如「第54條」），只處理完整法條名稱
+        # 跳過簡寫形式（留待第二階段處理）
         if law.startswith('第'):
             continue
 
         link = law_links_dict[law]
-
-        # 建立多個匹配模式，處理書名號和項/款/目
-        # 例如：「金融控股公司法第45條」應該匹配：
-        # 1. 金融控股公司法第45條
-        # 2. 《金融控股公司法》第45條
-        # 3. 金融控股公司法第45條第1項
-        # 4. 《金融控股公司法》第45條第1項
 
         # 提取法律名稱和條號
         law_match = re.match(r'^(.+?)(第\d+條(?:之\d+)?)', law)
@@ -139,13 +133,10 @@ def add_law_links_to_text(text: str, law_links_dict: dict) -> str:
         law_name = law_match.group(1)  # 例如：「金融控股公司法」
         article = law_match.group(2)   # 例如：「第45條」
 
-        # 建立彈性匹配模式：
-        # - 法律名稱可能有書名號《》
-        # - 條號後面可能有項/款/目
+        # 建立彈性匹配模式：支援書名號和項/款/目
         law_name_escaped = re.escape(law_name)
         article_escaped = re.escape(article)
 
-        # 匹配模式：(?:《)?法律名稱(?:》)?條號(?:第\d+項)?(?:第\d+款)?(?:第\d+目)?
         pattern = (
             r'(?<!\[)(?<!\()'  # 不在連結中
             r'(?:《)?' + law_name_escaped + r'(?:》)?'  # 法律名稱（可選書名號）
@@ -162,7 +153,7 @@ def add_law_links_to_text(text: str, law_links_dict: dict) -> str:
             # 檢查這個位置是否已被替換
             is_overlapping = False
             for pos, pos_end in replaced_positions:
-                if (start < pos_end and end > pos):  # 有重疊
+                if (start < pos_end and end > pos):
                     is_overlapping = True
                     break
 
@@ -174,10 +165,53 @@ def add_law_links_to_text(text: str, law_links_dict: dict) -> str:
         for start, end, matched_text in reversed(matches):
             replacement = f'[{matched_text}]({link})'
             result = result[:start] + replacement + result[end:]
-
-            # 記錄已替換的位置
             new_end = start + len(replacement)
             replaced_positions.add((start, new_end))
+
+    # === 第二階段：處理簡寫形式（如「、第51條」「及第60條」） ===
+    for law in sorted_laws:
+        # 只處理簡寫形式
+        if not law.startswith('第'):
+            continue
+
+        link = law_links_dict[law]
+
+        # 匹配簡寫形式：前面有「、」「及」「與」「和」等連接詞
+        article_escaped = re.escape(law)
+        pattern = (
+            r'(?<!\[)(?<!\()'  # 不在連結中
+            r'(?:[、，及與和])\s*' + article_escaped +  # 連接詞 + 條號
+            r'(?:第\d+項)?(?:第\d+款)?(?:第\d+目)?'  # 可選的項/款/目
+            r'(?!\])(?!\))'  # 不在連結中
+        )
+
+        matches = []
+        for match in re.finditer(pattern, result):
+            start, end = match.span()
+
+            # 檢查這個位置是否已被替換
+            is_overlapping = False
+            for pos, pos_end in replaced_positions:
+                if (start < pos_end and end > pos):
+                    is_overlapping = True
+                    break
+
+            if not is_overlapping:
+                matched_text = match.group(0)
+                # 保留前面的連接詞
+                matches.append((start, end, matched_text))
+
+        # 從後往前替換
+        for start, end, matched_text in reversed(matches):
+            # 提取連接詞和條號部分
+            connector_match = re.match(r'([、，及與和]\s*)(.+)', matched_text)
+            if connector_match:
+                connector = connector_match.group(1)
+                article_part = connector_match.group(2)
+                replacement = f'{connector}[{article_part}]({link})'
+                result = result[:start] + replacement + result[end:]
+                new_end = start + len(replacement)
+                replaced_positions.add((start, new_end))
 
     return result
 
