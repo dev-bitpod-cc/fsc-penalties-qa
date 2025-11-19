@@ -280,8 +280,14 @@ def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping:
         st.warning("⚠️ 未找到有效的參考來源")
         return
 
+    # 按日期排序（最新→最舊）
+    unique_file_ids.sort(
+        key=lambda fid: file_mapping.get(fid, {}).get('date', ''),
+        reverse=True  # 降序：最新的在前面
+    )
+
     # 顯示參考來源
-    st.subheader(f"📚 參考來源 ({len(unique_file_ids)} 筆)")
+    st.subheader(f"📚 參考來源 ({len(unique_file_ids)} 筆，依時間排序）")
 
     for i, file_id in enumerate(unique_file_ids, 1):
         file_info = file_mapping.get(file_id, {})
@@ -391,9 +397,10 @@ def query_penalties(client: genai.Client, query: str, store_id: str, model: str 
    - 使用繁體中文，保持專業但易懂的語氣
    - 如果找不到相關資料，請明確告知
 
-4. **多案件處理**：
+4. **多案件處理**（重要）：
    - 如果有多筆相關案件，列出前 3-5 筆最相關的
-   - 按時間順序（最新在前）或相關性排序
+   - **必須嚴格按時間順序排列：最新的案件（日期較大）在前面，最舊的（日期較小）在後面**
+   - 每個案件使用編號「### 1.」、「### 2.」等，依時間由新到舊
    - 每個案件獨立說明，不要混淆
 
 5. **概念性問題處理**（重要）：
@@ -737,14 +744,32 @@ def main():
                     mapping = load_file_mapping()
                     gemini_id_mapping = load_gemini_id_mapping()
 
-                    # 收集所有參考文件中的法條連結（用於在答案中加入連結）
+                    # 收集所有參考文件中的法條連結和案例連結（用於在答案中加入連結）
                     all_law_links = {}
+                    case_urls = []  # 案例連結列表（按時間排序）
+
                     if result.get('sources') and len(result['sources']) > 0:
+                        # 先收集所有 file_id 及其資訊
+                        file_ids_with_info = []
                         for source in result['sources']:
                             filename = source.get('filename', '')
                             file_id = extract_file_id(filename, gemini_id_mapping)
                             file_info = mapping.get(file_id, {})
-                            law_links = file_info.get('law_links', {})
+
+                            if file_info:
+                                file_ids_with_info.append({
+                                    'file_id': file_id,
+                                    'date': file_info.get('date', ''),
+                                    'original_url': file_info.get('original_url', ''),
+                                    'law_links': file_info.get('law_links', {})
+                                })
+
+                        # 按日期排序（最新→最舊）
+                        file_ids_with_info.sort(key=lambda x: x['date'], reverse=True)
+
+                        # 收集法條連結
+                        for info in file_ids_with_info:
+                            law_links = info['law_links']
                             # 過濾掉無效法條
                             filtered_law_links = {
                                 law: link for law, link in law_links.items()
@@ -752,11 +777,20 @@ def main():
                             }
                             all_law_links.update(filtered_law_links)
 
-                    # 顯示答案（加入法條連結）
+                        # 收集案例連結（按時間排序）
+                        case_urls = [info['original_url'] for info in file_ids_with_info if info['original_url']]
+
+                    # 顯示答案（加入法條連結和案例連結）
                     st.subheader("📝 答案")
                     response_text = result['text']
+
+                    # 先加入法條連結
                     response_with_law_links = add_law_links_to_text(response_text, all_law_links)
-                    st.markdown(response_with_law_links)
+
+                    # 再加入案例連結（按時間順序）
+                    response_with_all_links = insert_case_links_by_order(response_with_law_links, case_urls)
+
+                    st.markdown(response_with_all_links)
 
                     # 顯示參考來源（簡化版）
                     if result.get('sources') and len(result['sources']) > 0:
