@@ -301,13 +301,45 @@ def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping:
         source_code = file_info.get('source', 'N/A')
         source_unit = SOURCE_UNIT_MAPPING.get(source_code, source_code)
 
-        # 機構名稱：優先使用 institution_name，沒有則 fallback 到 institution
-        institution = file_info.get('institution_name') or file_info.get('institution', 'N/A')
+        # 取得 title（機構名稱和罰款金額都需要）
+        title = file_info.get('title', '')
+
+        # 機構名稱：智能提取邏輯
+        institution = 'N/A'
+
+        # 策略 1: 從 title 開頭提取（最常見）
+        institution_match = re.match(r'^([^違與因未涉經辦就依查核獲對於關於自]+?(?:股份有限公司|商業銀行|銀行|證券|保險|投信|投顧|期貨|金控|人壽|產險|證券投資信託|證券投資顧問))', title)
+        if institution_match:
+            institution = institution_match.group(1).strip()
+
+        # 如果策略 1 失敗，嘗試策略 2 和 3
+        if institution == 'N/A':
+            # 策略 2: 在整個 title 中搜索機構名稱（限制長度避免抓到過長內容）
+            institution_search = re.search(r'((?:[^\s，。、；：於]{1,20})(?:股份有限公司|商業銀行|銀行|證券|保險|投信|投顧|期貨|金控|人壽|產險))', title)
+            if institution_search:
+                candidate = institution_search.group(1).strip()
+                # 過濾掉不合理的結果（包含特定關鍵字）
+                if not any(word in candidate for word in ['停止', '處分', '送達', '起', '下稱']):
+                    institution = candidate
+
+        # 如果策略 1 和 2 都失敗，使用策略 3
+        if institution == 'N/A':
+            # 策略 3: 從 institution 欄位提取或直接使用
+            raw_institution = file_info.get('institution_name') or file_info.get('institution', 'N/A')
+            # 如果 institution 太長，嘗試提取機構名稱部分
+            if len(raw_institution) > 30:
+                clean_match = re.search(r'((?:[^\s，。、；：於]{1,20})(?:股份有限公司|商業銀行|銀行|證券|保險|投信|投顧|期貨|金控|人壽|產險))', raw_institution)
+                if clean_match:
+                    institution = clean_match.group(1).strip()
+                    # 移除「(下稱...」等後綴
+                    institution = re.sub(r'\s*[（\(].*$', '', institution)
+                else:
+                    institution = raw_institution
+            else:
+                institution = raw_institution
 
         # 罰款金額：從 title 提取
         penalty_amount = 'N/A'
-        title = file_info.get('title', '')
-        import re
         # 支援多種格式：「新臺幣200萬元」、「200萬元罰鍰」、「罰鍰1000萬元」等
         penalty_match = re.search(r'(?:新臺幣|新台幣|罰鍰|罰緩|核處|處)?[\s\(（]*(?:下同)?[\s\)）]*(\d+(?:,\d+)*(?:\.\d+)?)\s*(萬|億)?元(?:罰鍰|罰緩)?', title)
         if penalty_match:
