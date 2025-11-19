@@ -115,28 +115,69 @@ def add_law_links_to_text(text: str, law_links_dict: dict) -> str:
     sorted_laws = sorted(law_links_dict.keys(), key=len, reverse=True)
 
     result = text
-    replaced = set()  # 記錄已替換的法條，避免重複替換
+    replaced_positions = set()  # 記錄已替換的位置，避免重複替換
 
     for law in sorted_laws:
-        if law in replaced:
+        # 跳過簡寫形式（如「第54條」），只處理完整法條名稱
+        if law.startswith('第'):
             continue
 
         link = law_links_dict[law]
 
-        # 使用正則表達式找到法條（確保不在 Markdown 連結中）
-        # 不匹配已經是連結的部分：[xxx] 或 (http...)
-        pattern = r'(?<!\[)(?<!\()' + re.escape(law) + r'(?!\])(?!\))'
+        # 建立多個匹配模式，處理書名號和項/款/目
+        # 例如：「金融控股公司法第45條」應該匹配：
+        # 1. 金融控股公司法第45條
+        # 2. 《金融控股公司法》第45條
+        # 3. 金融控股公司法第45條第1項
+        # 4. 《金融控股公司法》第45條第1項
 
-        # 替換為 Markdown 連結格式
-        replacement = f'[{law}]({link})'
+        # 提取法律名稱和條號
+        law_match = re.match(r'^(.+?)(第\d+條(?:之\d+)?)', law)
+        if not law_match:
+            continue
 
-        # 執行替換
-        new_result = re.sub(pattern, replacement, result)
+        law_name = law_match.group(1)  # 例如：「金融控股公司法」
+        article = law_match.group(2)   # 例如：「第45條」
 
-        # 如果有替換發生，記錄下來
-        if new_result != result:
-            replaced.add(law)
-            result = new_result
+        # 建立彈性匹配模式：
+        # - 法律名稱可能有書名號《》
+        # - 條號後面可能有項/款/目
+        law_name_escaped = re.escape(law_name)
+        article_escaped = re.escape(article)
+
+        # 匹配模式：(?:《)?法律名稱(?:》)?條號(?:第\d+項)?(?:第\d+款)?(?:第\d+目)?
+        pattern = (
+            r'(?<!\[)(?<!\()'  # 不在連結中
+            r'(?:《)?' + law_name_escaped + r'(?:》)?'  # 法律名稱（可選書名號）
+            r'\s*' + article_escaped +  # 條號
+            r'(?:第\d+項)?(?:第\d+款)?(?:第\d+目)?'  # 可選的項/款/目
+            r'(?!\])(?!\))'  # 不在連結中
+        )
+
+        # 找到所有匹配並收集
+        matches = []
+        for match in re.finditer(pattern, result):
+            start, end = match.span()
+
+            # 檢查這個位置是否已被替換
+            is_overlapping = False
+            for pos, pos_end in replaced_positions:
+                if (start < pos_end and end > pos):  # 有重疊
+                    is_overlapping = True
+                    break
+
+            if not is_overlapping:
+                matched_text = match.group(0)
+                matches.append((start, end, matched_text))
+
+        # 從後往前替換（避免位置偏移）
+        for start, end, matched_text in reversed(matches):
+            replacement = f'[{matched_text}]({link})'
+            result = result[:start] + replacement + result[end:]
+
+            # 記錄已替換的位置
+            new_end = start + len(replacement)
+            replaced_positions.add((start, new_end))
 
     return result
 
