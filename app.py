@@ -2,7 +2,11 @@
 FSC 裁罰案件查詢系統
 使用 Google Gemini File Search Store 進行 RAG 查詢
 
-Version: 1.0.1 - 修正證券投資信託及顧問法 pcode (G0400121)
+Version: 1.1.0 - 升級 Plain Text Store + 新增 4 個法規 pcode (2025-11-19)
+  - 升級為 Plain Text 格式以提升 RAG 檢索效果
+  - 新增法規: 金融消費者保護法、個人資料保護法、強制汽車責任保險法、兩岸人民關係條例
+  - 修正正則表達式支援單字法規（民法、刑法）和條例結尾的法規
+  - 490 筆資料，100% pcode 映射覆蓋率
 """
 
 import os
@@ -342,7 +346,7 @@ def init_gemini():
     # 建立 GenAI Client
     client = genai.Client(api_key=api_key)
 
-    store_id = os.getenv('GEMINI_STORE_ID', 'fileSearchStores/fscpenalties-tu709bvr1qti')
+    store_id = os.getenv('GEMINI_STORE_ID', 'fileSearchStores/fscpenaltiesplaintext-4f87t5uexgui')
 
     return client, store_id
 
