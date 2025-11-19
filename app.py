@@ -853,9 +853,8 @@ def main():
                     # 有 sources 或第一次查詢就成功，正常顯示結果
                     st.success("✅ 查詢完成")
 
-                    # 指標欄（參考 Sanction-Deploy，只顯示：來源數量）
+                    # 保留 sources_count 變數供後續除錯資訊使用
                     sources_count = len(result.get('sources', []))
-                    st.metric("📚 來源數量", sources_count)
 
                     st.markdown("---")
 
