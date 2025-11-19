@@ -438,6 +438,97 @@ def init_gemini():
 
     return client, store_id
 
+def generate_law_links_instruction() -> str:
+    """
+    生成法條連結的 system instruction
+
+    從 file_mapping.json 收集所有唯一的完整法條連結，
+    生成包含連結表格和格式規則的指令文字
+    """
+    import json
+    from pathlib import Path
+
+    # 讀取 file_mapping.json
+    mapping_file = Path(__file__).parent / 'data/penalties/file_mapping.json'
+
+    if not mapping_file.exists():
+        return ""
+
+    try:
+        with open(mapping_file, 'r', encoding='utf-8') as f:
+            mapping = json.load(f)
+
+        # 收集所有唯一的完整法條連結（不包含簡寫形式）
+        all_law_links = {}
+        for file_id, info in mapping.items():
+            law_links = info.get('law_links', {})
+            for law_text, url in law_links.items():
+                # 只保留完整法條名稱（不以「第」開頭）
+                if not law_text.startswith('第'):
+                    if law_text not in all_law_links:
+                        all_law_links[law_text] = url
+
+        if not all_law_links:
+            return ""
+
+        # 生成 system instruction
+        instruction = f"""
+
+---
+
+## 法條連結生成規則
+
+當你在回答中提到法條時，請使用 Markdown 連結格式。以下是可用的法條連結：
+
+```json
+{json.dumps(all_law_links, ensure_ascii=False, indent=2)}
+```
+
+### 格式規則：
+
+1. **完整法條**（包含法律名稱）：
+   - 使用對應的完整連結
+   - 範例：[金融控股公司法第45條第1項](https://law.moj.gov.tw/...)
+   - 可以有書名號：[《金融控股公司法》第45條第1項](https://law.moj.gov.tw/...)
+
+2. **簡寫法條**（省略法律名稱）：
+   - 如果上文已提到法律名稱，簡寫時使用同一法律的連結
+   - 範例：[金融控股公司法第45條第1項](url)、[第51條](url)及[第60條第16款](url)
+
+3. **連接詞處理**：
+   - 連接詞（、及以等）放在連結外面
+   - 範例：[金融控股公司法第45條](url)及[第51條](url)
+
+4. **項款目層級**：
+   - 所有法條連結都指向「條」的層級
+   - 第X項、第X款、第X目 包含在連結文字中，但 URL 相同
+   - 範例：[第45條第1項第2款](url) ← URL 指向第45條
+
+5. **未列出的法條**：
+   - 如果法條不在上述列表中，**不要加連結**，直接顯示文字
+
+### 輸出範例：
+
+✓ 正確
+```
+該公司違反[《金融控股公司法》第45條第1項](https://law.moj.gov.tw/...)及[第51條](https://law.moj.gov.tw/...)規定，
+依[行政罰法第24條](https://law.moj.gov.tw/...)及[《金融控股公司法》第60條第16款](https://law.moj.gov.tw/...)處罰。
+```
+
+✗ 錯誤
+```
+該公司違反《金融控股公司法》第45條第1項及第51條規定  ← 沒有連結
+該公司違反[《金融控股公司法》第45條第1項及第51條](url)規定  ← 連結包含了兩個法條（錯誤）
+```
+
+請嚴格遵守以上格式要求。
+"""
+
+        return instruction
+
+    except Exception as e:
+        return ""
+
 # 查詢函數
 def query_penalties(client: genai.Client, query: str, store_id: str, model: str = 'gemini-2.5-flash', filters: dict = None) -> dict:
     """
@@ -517,6 +608,11 @@ def query_penalties(client: genai.Client, query: str, store_id: str, model: str 
 
 （注意：不要在每個案件後面加上「資料來源」或檔名，系統會自動在最下方顯示參考文件）
 """
+
+        # 附加法條連結指令（讓 Gemini 直接生成帶連結的答案）
+        law_links_instruction = generate_law_links_instruction()
+        if law_links_instruction:
+            system_instruction += law_links_instruction
 
         # 建立完整查詢（篩選條件）
         full_query = query
@@ -865,15 +961,15 @@ def main():
                         # 收集案例連結（按時間排序）
                         case_urls = [info['original_url'] for info in file_ids_with_info if info['original_url']]
 
-                    # 顯示答案（加入法條連結和案例連結）
+                    # 顯示答案（加入案例連結）
                     st.subheader("📝 答案")
                     response_text = result['text']
 
-                    # 先加入法條連結
-                    response_with_law_links = add_law_links_to_text(response_text, all_law_links)
+                    # 法條連結已由 Gemini 在生成答案時自動加入（透過 system_instruction）
+                    # 不再需要後處理 add_law_links_to_text()
 
-                    # 再加入案例連結（按時間順序）
-                    response_with_all_links = insert_case_links_by_order(response_with_law_links, case_urls)
+                    # 加入案例連結（按時間順序）
+                    response_with_all_links = insert_case_links_by_order(response_text, case_urls)
 
                     st.markdown(response_with_all_links)
 
