@@ -249,20 +249,13 @@ def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping:
     """
     簡化版參考來源顯示（參考 Sanction-Deploy 風格）
 
+    資料直接從 file_mapping 讀取，不再進行複雜的提取運算
+
     Args:
         sources: 從 query_penalties 返回的 sources 列表
         file_mapping: file_mapping.json 的內容
         gemini_id_mapping: Gemini ID 映射
     """
-    # 來源單位代碼轉中文映射表
-    SOURCE_UNIT_MAPPING = {
-        'bank_bureau': '銀行局',
-        'insurance_bureau': '保險局',
-        'securities_bureau': '證券期貨局',
-        'aml_office': '洗錢防制辦公室',
-        'fsc': '金管會'
-    }
-
     if not sources:
         st.warning("⚠️ 未找到參考來源")
         return
@@ -294,59 +287,11 @@ def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping:
         file_info = file_mapping.get(file_id, {})
         display_name = file_info.get('display_name', file_id)
 
-        # 提取詳細資訊
+        # 直接讀取預先提取好的欄位（效能優化：不再執行複雜的正則表達式）
         date_str = file_info.get('date', 'N/A')
-
-        # 來源單位：轉換為中文
-        source_code = file_info.get('source', 'N/A')
-        source_unit = SOURCE_UNIT_MAPPING.get(source_code, source_code)
-
-        # 取得 title（機構名稱和罰款金額都需要）
-        title = file_info.get('title', '')
-
-        # 機構名稱：智能提取邏輯
-        institution = 'N/A'
-
-        # 策略 1: 從 title 開頭提取（最常見）
-        institution_match = re.match(r'^([^違與因未涉經辦就依查核獲對於關於自]+?(?:股份有限公司|商業銀行|銀行|證券|保險|投信|投顧|期貨|金控|人壽|產險|證券投資信託|證券投資顧問))', title)
-        if institution_match:
-            institution = institution_match.group(1).strip()
-
-        # 如果策略 1 失敗，嘗試策略 2 和 3
-        if institution == 'N/A':
-            # 策略 2: 在整個 title 中搜索機構名稱（限制長度避免抓到過長內容）
-            institution_search = re.search(r'((?:[^\s，。、；：於]{1,20})(?:股份有限公司|商業銀行|銀行|證券|保險|投信|投顧|期貨|金控|人壽|產險))', title)
-            if institution_search:
-                candidate = institution_search.group(1).strip()
-                # 過濾掉不合理的結果（包含特定關鍵字）
-                if not any(word in candidate for word in ['停止', '處分', '送達', '起', '下稱']):
-                    institution = candidate
-
-        # 如果策略 1 和 2 都失敗，使用策略 3
-        if institution == 'N/A':
-            # 策略 3: 從 institution 欄位提取或直接使用
-            raw_institution = file_info.get('institution_name') or file_info.get('institution', 'N/A')
-            # 如果 institution 太長，嘗試提取機構名稱部分
-            if len(raw_institution) > 30:
-                clean_match = re.search(r'((?:[^\s，。、；：於]{1,20})(?:股份有限公司|商業銀行|銀行|證券|保險|投信|投顧|期貨|金控|人壽|產險))', raw_institution)
-                if clean_match:
-                    institution = clean_match.group(1).strip()
-                    # 移除「(下稱...」等後綴
-                    institution = re.sub(r'\s*[（\(].*$', '', institution)
-                else:
-                    institution = raw_institution
-            else:
-                institution = raw_institution
-
-        # 罰款金額：從 title 提取
-        penalty_amount = 'N/A'
-        # 支援多種格式：「新臺幣200萬元」、「200萬元罰鍰」、「罰鍰1000萬元」等
-        penalty_match = re.search(r'(?:新臺幣|新台幣|罰鍰|罰緩|核處|處)?[\s\(（]*(?:下同)?[\s\)）]*(\d+(?:,\d+)*(?:\.\d+)?)\s*(萬|億)?元(?:罰鍰|罰緩)?', title)
-        if penalty_match:
-            amount = penalty_match.group(1).replace(',', '')
-            unit_char = penalty_match.group(2) or ''
-            unit = f"{unit_char}元" if unit_char else "元"
-            penalty_amount = f"新臺幣 {amount} {unit}"
+        source_unit = file_info.get('source_display', 'N/A')  # 已轉換為中文
+        institution = file_info.get('institution_name_clean', 'N/A')  # 已清理
+        penalty_amount = file_info.get('penalty_amount_formatted', 'N/A')  # 已格式化
 
         applicable_laws = file_info.get('applicable_laws', [])
         law_links = file_info.get('law_links', {})
