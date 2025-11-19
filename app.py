@@ -254,6 +254,15 @@ def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping:
         file_mapping: file_mapping.json 的內容
         gemini_id_mapping: Gemini ID 映射
     """
+    # 來源單位代碼轉中文映射表
+    SOURCE_UNIT_MAPPING = {
+        'bank_bureau': '銀行局',
+        'insurance_bureau': '保險局',
+        'securities_bureau': '證券期貨局',
+        'aml_office': '洗錢防制辦公室',
+        'fsc': '金管會'
+    }
+
     if not sources:
         st.warning("⚠️ 未找到參考來源")
         return
@@ -287,9 +296,26 @@ def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping:
 
         # 提取詳細資訊
         date_str = file_info.get('date', 'N/A')
-        source_unit = file_info.get('source', 'N/A')
-        institution = file_info.get('institution_name', 'N/A')
-        penalty_amount = file_info.get('penalty_amount', 'N/A')
+
+        # 來源單位：轉換為中文
+        source_code = file_info.get('source', 'N/A')
+        source_unit = SOURCE_UNIT_MAPPING.get(source_code, source_code)
+
+        # 機構名稱：優先使用 institution_name，沒有則 fallback 到 institution
+        institution = file_info.get('institution_name') or file_info.get('institution', 'N/A')
+
+        # 罰款金額：從 title 提取
+        penalty_amount = 'N/A'
+        title = file_info.get('title', '')
+        import re
+        # 支援多種格式：「新臺幣200萬元」、「200萬元罰鍰」、「罰鍰1000萬元」等
+        penalty_match = re.search(r'(?:新臺幣|新台幣|罰鍰|罰緩|核處|處)?[\s\(（]*(?:下同)?[\s\)）]*(\d+(?:,\d+)*(?:\.\d+)?)\s*(萬|億)?元(?:罰鍰|罰緩)?', title)
+        if penalty_match:
+            amount = penalty_match.group(1).replace(',', '')
+            unit_char = penalty_match.group(2) or ''
+            unit = f"{unit_char}元" if unit_char else "元"
+            penalty_amount = f"新臺幣 {amount} {unit}"
+
         applicable_laws = file_info.get('applicable_laws', [])
         law_links = file_info.get('law_links', {})
         detail_url = file_info.get('original_url', '')
