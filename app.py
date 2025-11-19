@@ -133,12 +133,14 @@ def add_law_links_to_text(text: str, law_links_dict: dict) -> str:
         law_name = law_match.group(1)  # 例如：「金融控股公司法」
         article = law_match.group(2)   # 例如：「第45條」
 
-        # 建立彈性匹配模式：支援書名號和項/款/目
+        # 建立彈性匹配模式：支援書名號、項/款/目、前置連接詞
         law_name_escaped = re.escape(law_name)
         article_escaped = re.escape(article)
 
+        # 匹配模式：可選的前置連接詞 + 法律名稱 + 條號 + 項/款/目
         pattern = (
             r'(?<!\[)(?<!\()'  # 不在連結中
+            r'(?:[、，及與和以]\s*)?'  # 可選的前置連接詞
             r'(?:《)?' + law_name_escaped + r'(?:》)?'  # 法律名稱（可選書名號）
             r'\s*' + article_escaped +  # 條號
             r'(?:第\d+項)?(?:第\d+款)?(?:第\d+目)?'  # 可選的項/款/目
@@ -163,7 +165,15 @@ def add_law_links_to_text(text: str, law_links_dict: dict) -> str:
 
         # 從後往前替換（避免位置偏移）
         for start, end, matched_text in reversed(matches):
-            replacement = f'[{matched_text}]({link})'
+            # 檢查是否有前置連接詞
+            connector_match = re.match(r'^([、，及與和以]\s*)?(.+)$', matched_text)
+            if connector_match:
+                connector = connector_match.group(1) or ''
+                law_part = connector_match.group(2)
+                replacement = f'{connector}[{law_part}]({link})'
+            else:
+                replacement = f'[{matched_text}]({link})'
+
             result = result[:start] + replacement + result[end:]
             new_end = start + len(replacement)
             replaced_positions.add((start, new_end))
