@@ -332,12 +332,12 @@ def remove_social_media_noise(text: str) -> str:
 
 def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping: dict):
     """
-    簡化版參考來源顯示（參考 Sanction-Deploy 風格）
+    簡化版參考來源顯示
 
-    資料直接從 file_mapping 讀取，不再進行複雜的提取運算
+    顯示 Gemini 回覆的最接近 chunk 內容和原始連結
 
     Args:
-        sources: 從 query_penalties 返回的 sources 列表
+        sources: 從 query_penalties 返回的 sources 列表（包含 snippet）
         file_mapping: file_mapping.json 的內容
         gemini_id_mapping: Gemini ID 映射
     """
@@ -345,12 +345,13 @@ def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping:
         st.warning("⚠️ 未找到參考來源")
         return
 
-    # 去重並提取有效的 file_ids
-    unique_file_ids = []
+    # 去重並提取有效的 file_ids，同時保存對應的 snippet
+    unique_sources = []
     seen = set()
 
     for source in sources:
         filename = source.get('filename', '')
+        snippet = source.get('snippet', '')
         file_id = extract_file_id(filename, gemini_id_mapping)
 
         # 跳過映射失敗或不存在於 file_mapping 的檔案
@@ -358,56 +359,40 @@ def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping:
             continue
 
         if file_id not in seen:
-            unique_file_ids.append(file_id)
+            unique_sources.append({
+                'file_id': file_id,
+                'snippet': snippet
+            })
             seen.add(file_id)
 
-    if not unique_file_ids:
+    if not unique_sources:
         st.warning("⚠️ 未找到有效的參考來源")
         return
 
     # 按日期排序（最新→最舊）
-    unique_file_ids.sort(
-        key=lambda fid: file_mapping.get(fid, {}).get('date', ''),
+    unique_sources.sort(
+        key=lambda item: file_mapping.get(item['file_id'], {}).get('date', ''),
         reverse=True  # 降序：最新的在前面
     )
 
     # 顯示參考來源
-    st.subheader(f"📚 參考來源 ({len(unique_file_ids)} 筆，依時間排序）")
+    st.subheader(f"📚 參考來源 ({len(unique_sources)} 筆，依時間排序）")
 
-    for i, file_id in enumerate(unique_file_ids, 1):
+    for i, source_item in enumerate(unique_sources, 1):
+        file_id = source_item['file_id']
+        snippet = source_item['snippet']
         file_info = file_mapping.get(file_id, {})
         display_name = file_info.get('display_name', file_id)
-
-        # 直接讀取預先提取好的欄位（效能優化：不再執行複雜的正則表達式）
-        date_str = file_info.get('date', 'N/A')
-        source_unit = file_info.get('source_display', 'N/A')  # 已轉換為中文
-        institution = file_info.get('institution_name_clean', 'N/A')  # 已清理
-        penalty_amount = file_info.get('penalty_amount_formatted', 'N/A')  # 已格式化
-
-        applicable_laws = file_info.get('applicable_laws', [])
-        law_links = file_info.get('law_links', {})
         detail_url = file_info.get('original_url', '')
 
-        # 使用 expander 顯示（類似 Sanction-Deploy）
+        # 使用 expander 顯示
         with st.expander(f"來源 {i}: {display_name}", expanded=False):
-            # 基本資訊
-            st.markdown(f"**📅 發文日期：** {date_str}")
-            st.markdown(f"**🏢 來源單位：** {source_unit}")
-            st.markdown(f"**🏛️ 機構名稱：** {institution}")
-            st.markdown(f"**💰 罰款金額：** {penalty_amount}")
-
-            # 違反法規（加入連結）
-            if applicable_laws:
-                st.markdown("**⚖️ 違反法規：**")
-                law_items = []
-                for law in applicable_laws[:5]:  # 只顯示前5個
-                    law_clean = law.strip()
-                    # 如果有連結，加上連結
-                    if law_clean in law_links:
-                        law_items.append(f"[{law_clean}]({law_links[law_clean]})")
-                    else:
-                        law_items.append(law_clean)
-                st.markdown("  \n".join(f"- {item}" for item in law_items))
+            # 顯示 Gemini 檢索到的最接近 chunk 內容
+            if snippet:
+                st.markdown("**📄 相關內容：**")
+                st.markdown(f"> {snippet}")
+            else:
+                st.info("無可用的內容片段")
 
             # 原始公告連結
             if detail_url:
