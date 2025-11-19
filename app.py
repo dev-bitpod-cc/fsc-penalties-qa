@@ -29,7 +29,7 @@ def load_file_mapping():
     from pathlib import Path
     import os
 
-    mapping_file = Path(__file__).parent / 'file_mapping.json'
+    mapping_file = Path(__file__).parent / 'data/penalties/file_mapping.json'
 
     if not mapping_file.exists():
         return {}
@@ -52,7 +52,7 @@ def load_file_mapping():
 def load_gemini_id_mapping():
     """載入 Gemini ID 反向映射檔（Gemini file_id → file_id）（移除快取以確保始終使用最新版本）"""
     from pathlib import Path
-    mapping_file = Path(__file__).parent / 'gemini_id_mapping.json'
+    mapping_file = Path(__file__).parent / 'data/penalties/gemini_id_mapping.json'
 
     if not mapping_file.exists():
         return {}
