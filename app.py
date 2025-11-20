@@ -2,13 +2,13 @@
 FSC 裁罰案件查詢系統
 使用 Google Gemini File Search Store 進行 RAG 查詢
 
-Version: 1.3.3 - 在頁尾顯示版本號 (2025-11-20)
-  - 🏷️ 在頁面左下角顯示版本號 (v1.3.3)
-  - 📐 使用兩欄佈局：左邊版本號，右邊資料來源
+Version: 1.3.4 - 版本號移至左側邊欄 (2025-11-20)
+  - 🏷️ 版本號顯示在左側邊欄最下方（更符合慣例）
+  - 📐 頁尾恢復簡潔設計（只顯示資料來源）
 
-Previous: 1.3.2 (2025-11-20)
-  - 完全移除中間標題，保持流暢段落
-  - 只有具體案例才使用 ### 標題
+Previous: 1.3.3 (2025-11-20)
+  - 在頁尾顯示版本號
+  - 使用兩欄佈局：左邊版本號，右邊資料來源
 
 Previous: 1.2.0 (2025-11-19)
   - 簡化 UI（參考 Sanction-Deploy 風格）+ Plain Text Store
@@ -802,6 +802,10 @@ def main():
         st.caption(f"總案件數：490 筆")
         st.caption(f"日期範圍：2012-01-12 至 2025-09-25")
 
+        # 版本號（放在側邊欄最下方）
+        st.markdown("---")
+        st.caption("v1.3.4")
+
     # 初始化 session state（使用不同的變數名）
     if 'current_query' not in st.session_state:
         st.session_state.current_query = ""
@@ -952,15 +956,7 @@ def main():
 
     # 頁尾
     st.divider()
-
-    # 使用兩欄佈局：左邊版本號，右邊資料來源
-    footer_col1, footer_col2 = st.columns([1, 4])
-
-    with footer_col1:
-        st.caption("v1.3.3")
-
-    with footer_col2:
-        st.caption("資料來源：金融監督管理委員會")
+    st.caption("資料來源：金融監督管理委員會")
 
 if __name__ == "__main__":
     main()
