@@ -484,7 +484,7 @@ def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping:
     )
 
     # 顯示參考來源
-    st.subheader(f"📚 參考來源 ({len(unique_sources)} 筆，依時間排序）")
+    st.subheader("📚 參考來源")
 
     for i, source_item in enumerate(unique_sources, 1):
         file_id = source_item['file_id']
@@ -718,14 +718,14 @@ def query_penalties(client: genai.Client, query: str, store_id: str, model: str 
 
 證券商遭主管機關裁罰「警告」處分後，根據相關法規，主要會受到以下業務限制：包括暫停新業務申請、限制分支機構設立、以及在一定期間內無法申請業務許可等。
 
-資料庫中共找到 X 筆相關案件，主要涉及 [違規類型]，裁罰金額從 [最小金額] 到 [最大金額] 不等。以下列出最具代表性的案件：
+根據資料庫所查詢到的案件，主要涉及 [違規類型]，裁罰金額從 [最小金額] 到 [最大金額] 不等。以下列出最具代表性的案件：
 
 ### 1. [案件標題]（最新）
 ...
 
 **範例 2：一般查詢（無問題詮釋）**
 
-資料庫中共找到 X 筆相關裁罰案件，這些案件主要涉及 [違規類型]，集中在 [時間範圍]。以下列出最具代表性的案件：
+根據資料庫所查詢到的案件，這些案件主要涉及 [違規類型]，集中在 [時間範圍]。以下列出最具代表性的案件：
 
 ### 1. [案件標題]（最新）
 - **日期**：YYYY-MM-DD
@@ -1065,7 +1065,7 @@ def main():
                     # 除錯資訊（折疊）
                     st.markdown("---")
                     with st.expander("⚠️ 本系統僅供參考，實際裁罰資訊請以金管會官網公告為準", expanded=False):
-                        st.info(f"📊 參考來源數量: {sources_count} 筆")
+                        st.info(f"📊 此查詢有使用參考文件")
                         if sources_count == 0:
                             st.warning("⚠️ 此次查詢未使用參考文件（可能是 Gemini 自行回答）")
         else:
