@@ -47,29 +47,73 @@ def load_file_mapping():
         except Exception as e:
             st.warning(f"⚠️ 載入裁罰映射檔失敗: {e}")
 
-    # 載入法令函釋映射
-    law_file = base_path / 'law_interpretations/law_interpretations_mapping.json'
-    if law_file.exists():
-        try:
-            with open(law_file, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                for file_id, info in data.items():
-                    info['_type'] = 'law_interpretation'
-                    combined_mapping[file_id] = info
-        except Exception as e:
-            st.warning(f"⚠️ 載入法令函釋映射檔失敗: {e}")
+    # 載入法令函釋映射（優先使用 gemini_id_mapping_new.json，它包含所有上傳的檔案）
+    law_gemini_file = base_path / 'law_interpretations/gemini_id_mapping_new.json'
+    law_mapping_file = base_path / 'law_interpretations/law_interpretations_mapping.json'
 
-    # 載入重要公告映射
-    ann_file = base_path / 'announcements/announcements_mapping.json'
-    if ann_file.exists():
+    # 先載入 gemini_id_mapping_new（包含基本資訊）
+    if law_gemini_file.exists():
         try:
-            with open(ann_file, 'r', encoding='utf-8') as f:
+            with open(law_gemini_file, 'r', encoding='utf-8') as f:
                 data = json.load(f)
                 for file_id, info in data.items():
-                    info['_type'] = 'announcement'
-                    combined_mapping[file_id] = info
+                    combined_mapping[file_id] = {
+                        'display_name': info.get('display_name', file_id),
+                        'date': info.get('date', ''),
+                        'source': info.get('source', ''),
+                        'category': info.get('category', ''),
+                        '_type': 'law_interpretation'
+                    }
         except Exception as e:
-            st.warning(f"⚠️ 載入公告映射檔失敗: {e}")
+            st.warning(f"⚠️ 載入法令函釋 Gemini 映射檔失敗: {e}")
+
+    # 再載入 law_interpretations_mapping（補充 original_url 等資訊）
+    if law_mapping_file.exists():
+        try:
+            with open(law_mapping_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                for file_id, info in data.items():
+                    if file_id in combined_mapping:
+                        combined_mapping[file_id]['original_url'] = info.get('original_url', '')
+                    else:
+                        info['_type'] = 'law_interpretation'
+                        combined_mapping[file_id] = info
+        except Exception as e:
+            pass
+
+    # 載入重要公告映射（優先使用 gemini_id_mapping_new.json）
+    ann_gemini_file = base_path / 'announcements/gemini_id_mapping_new.json'
+    ann_mapping_file = base_path / 'announcements/announcements_mapping.json'
+
+    # 先載入 gemini_id_mapping_new
+    if ann_gemini_file.exists():
+        try:
+            with open(ann_gemini_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                for file_id, info in data.items():
+                    combined_mapping[file_id] = {
+                        'display_name': info.get('display_name', file_id),
+                        'date': info.get('date', ''),
+                        'source': info.get('source', ''),
+                        'category': info.get('category', ''),
+                        '_type': 'announcement'
+                    }
+        except Exception as e:
+            st.warning(f"⚠️ 載入公告 Gemini 映射檔失敗: {e}")
+
+    # 再載入 announcements_mapping（補充 original_url）
+    if ann_mapping_file.exists():
+        try:
+            with open(ann_mapping_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                for file_id, info in data.items():
+                    if file_id in combined_mapping:
+                        combined_mapping[file_id]['original_url'] = info.get('original_url', '')
+                    else:
+                        info['_type'] = 'announcement'
+                        combined_mapping[file_id] = info
+        except Exception as e:
+            pass
 
     return combined_mapping
 
