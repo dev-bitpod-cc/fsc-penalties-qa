@@ -28,55 +28,106 @@ load_dotenv()
 
 # 載入映射檔
 def load_file_mapping():
-    """載入檔案映射檔（移除快取以確保始終使用最新版本）"""
+    """載入所有資料類型的檔案映射檔"""
     from pathlib import Path
-    import os
+    import json
 
-    mapping_file = Path(__file__).parent / 'data/penalties/file_mapping.json'
+    base_path = Path(__file__).parent / 'data'
+    combined_mapping = {}
 
-    if not mapping_file.exists():
-        return {}
+    # 載入裁罰案件映射
+    penalties_file = base_path / 'penalties/file_mapping.json'
+    if penalties_file.exists():
+        try:
+            with open(penalties_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                for file_id, info in data.items():
+                    info['_type'] = 'penalty'
+                    combined_mapping[file_id] = info
+        except Exception as e:
+            st.warning(f"⚠️ 載入裁罰映射檔失敗: {e}")
 
-    try:
-        import json
-        with open(mapping_file, 'r', encoding='utf-8') as f:
-            data = json.load(f)
+    # 載入法令函釋映射
+    law_file = base_path / 'law_interpretations/law_interpretations_mapping.json'
+    if law_file.exists():
+        try:
+            with open(law_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                for file_id, info in data.items():
+                    info['_type'] = 'law_interpretation'
+                    combined_mapping[file_id] = info
+        except Exception as e:
+            st.warning(f"⚠️ 載入法令函釋映射檔失敗: {e}")
 
-        # 顯示檔案資訊供除錯
-        file_mtime = os.path.getmtime(mapping_file)
-        file_size = os.path.getsize(mapping_file) / (1024 * 1024)  # MB
-        # st.sidebar.text(f"📄 file_mapping.json\n更新時間: {datetime.fromtimestamp(file_mtime).strftime('%Y-%m-%d %H:%M:%S')}\n大小: {file_size:.2f} MB")
+    # 載入重要公告映射
+    ann_file = base_path / 'announcements/announcements_mapping.json'
+    if ann_file.exists():
+        try:
+            with open(ann_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                for file_id, info in data.items():
+                    info['_type'] = 'announcement'
+                    combined_mapping[file_id] = info
+        except Exception as e:
+            st.warning(f"⚠️ 載入公告映射檔失敗: {e}")
 
-        return data
-    except Exception as e:
-        st.warning(f"⚠️ 載入映射檔失敗: {e}")
-        return {}
+    return combined_mapping
 
 def load_gemini_id_mapping():
-    """載入 Gemini ID 反向映射檔（Gemini file_id → file_id）（移除快取以確保始終使用最新版本）"""
+    """載入所有資料類型的 Gemini ID 反向映射（gemini_file_id → document_id）"""
     from pathlib import Path
-    mapping_file = Path(__file__).parent / 'data/penalties/gemini_id_mapping.json'
+    import json
 
-    if not mapping_file.exists():
-        return {}
+    base_path = Path(__file__).parent / 'data'
+    reverse_mapping = {}
 
-    try:
-        import json
-        with open(mapping_file, 'r', encoding='utf-8') as f:
-            return json.load(f)
-    except Exception as e:
-        st.warning(f"⚠️ 載入 Gemini ID 映射檔失敗: {e}")
-        return {}
+    # 載入裁罰案件 Gemini ID 映射（舊格式：直接是 gemini_id → doc_id）
+    penalties_file = base_path / 'penalties/gemini_id_mapping.json'
+    if penalties_file.exists():
+        try:
+            with open(penalties_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                reverse_mapping.update(data)
+        except Exception:
+            pass
+
+    # 載入法令函釋 Gemini ID 映射（新格式：doc_id → {gemini_file_id: ...}）
+    law_file = base_path / 'law_interpretations/gemini_id_mapping_new.json'
+    if law_file.exists():
+        try:
+            with open(law_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                for doc_id, info in data.items():
+                    gemini_id = info.get('gemini_file_id', '')
+                    if gemini_id:
+                        reverse_mapping[gemini_id] = doc_id
+        except Exception:
+            pass
+
+    # 載入重要公告 Gemini ID 映射（新格式）
+    ann_file = base_path / 'announcements/gemini_id_mapping_new.json'
+    if ann_file.exists():
+        try:
+            with open(ann_file, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                for doc_id, info in data.items():
+                    gemini_id = info.get('gemini_file_id', '')
+                    if gemini_id:
+                        reverse_mapping[gemini_id] = doc_id
+        except Exception:
+            pass
+
+    return reverse_mapping
 
 def extract_file_id(filename: str, gemini_id_mapping: dict = None) -> str:
     """從檔名中提取 file_id
 
     Args:
         filename: Gemini 返回的檔名（可能是內部 ID 如 "4ax547mbfiot"）
-        gemini_id_mapping: Gemini ID 反向映射 (files/xxx → fsc_pen_xxx)
+        gemini_id_mapping: Gemini ID 反向映射 (files/xxx → document_id)
 
     Returns:
-        file_id（用於查找 file_mapping.json），如果映射失敗則返回 None
+        file_id（用於查找 file_mapping），如果映射失敗則返回 None
     """
     import re
 
@@ -88,15 +139,25 @@ def extract_file_id(filename: str, gemini_id_mapping: dict = None) -> str:
             return gemini_id_mapping[full_id]
 
     # 回退：從檔名提取（適用於舊資料或直接是檔名的情況）
-    # 移除 files/ 前綴和 .md 後綴
-    filename_clean = filename.replace('files/', '').replace('.md', '')
+    filename_clean = filename.replace('files/', '').replace('.md', '').replace('.txt', '')
 
-    # 提取 fsc_pen_YYYYMMDD_NNNN 格式
+    # 提取各種格式的 file_id
+    # 裁罰案件：fsc_pen_YYYYMMDD_NNNN
     match = re.match(r'(fsc_pen_\d{8}_\d{4})', filename_clean)
     if match:
         return match.group(1)
 
-    # 如果無法提取有效的 file_id，返回 None（避免使用無效的 Gemini 內部 ID）
+    # 法令函釋：fsc_law_YYYYMMDDNNNN
+    match = re.match(r'(fsc_law_\d{12})', filename_clean)
+    if match:
+        return match.group(1)
+
+    # 重要公告：fsc_unk_YYYYMMDD_NNNN
+    match = re.match(r'(fsc_unk_\d{8}_\d{4})', filename_clean)
+    if match:
+        return match.group(1)
+
+    # 如果無法提取有效的 file_id，返回 None
     return None
 
 def add_law_links_to_text(text: str, law_links_dict: dict) -> str:
@@ -387,9 +448,24 @@ def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping:
         file_info = file_mapping.get(file_id, {})
         display_name = file_info.get('display_name', file_id)
         detail_url = file_info.get('original_url', '')
+        data_type = file_info.get('_type', 'unknown')
+
+        # 根據資料類型選擇圖示
+        type_icons = {
+            'penalty': '⚖️',
+            'law_interpretation': '📜',
+            'announcement': '📢'
+        }
+        type_labels = {
+            'penalty': '裁罰案件',
+            'law_interpretation': '法令函釋',
+            'announcement': '重要公告'
+        }
+        icon = type_icons.get(data_type, '📄')
+        type_label = type_labels.get(data_type, '未知')
 
         # 使用 expander 顯示
-        with st.expander(f"來源 {i}: {display_name}", expanded=False):
+        with st.expander(f"{icon} {type_label}_{display_name}", expanded=False):
             # 顯示 Gemini 檢索到的最接近 chunk 內容
             if snippet:
                 st.markdown("**📄 相關內容：**")
@@ -400,7 +476,7 @@ def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping:
             # 原始公告連結
             if detail_url:
                 st.markdown("---")
-                st.markdown(f"🔗 [查看金管會原始公告]({detail_url})")
+                st.markdown(f"🔗 [查看金管會原始頁面]({detail_url})")
 
 # 設定頁面
 st.set_page_config(
