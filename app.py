@@ -484,7 +484,7 @@ def display_sources_simple(sources: list, file_mapping: dict, gemini_id_mapping:
     )
 
     # 顯示參考來源
-    st.subheader("📚 參考來源")
+    st.subheader(f"📚 參考來源 ({len(unique_sources)} 筆)")
 
     for i, source_item in enumerate(unique_sources, 1):
         file_id = source_item['file_id']
